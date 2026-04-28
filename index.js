@@ -10,7 +10,7 @@ const PORT = process.env.PORT || 3000
 
 // ===== CONFIG - CHANGE THESE =====
 const BOT_NAME = 'VOID-MD'
-const OWNER_NUMBER = '254700000000' // CHANGE: no + or spaces
+const OWNER_NUMBER = '254112843071' // CHANGE: no + or spaces
 const BOT_IMAGE = 'https://i.imgur.com/YOUR_BANNER.png' // CHANGE
 const VERSION = 'v3.1.0'
 const PREFIX = '.'
