@@ -10,7 +10,7 @@ const PORT = process.env.PORT || 3000
 // === CONFIG - CHANGE THESE 2 LINES ===
 const BOT_NAME = 'VOID-MD'
 const OWNER_NAME = 'YOUR NAME HERE' // CHANGE THIS
-const OWNER_NUMBER = '254112843071' // CHANGE THIS TO YOUR NUMBER WITH 254
+const OWNER_NUMBER = '254707866406' // CHANGE THIS TO YOUR NUMBER WITH 254
 const BOT_IMAGE = 'https://telegra.ph/file/24fa902ead26340f3df2c.png'
 const VERSION = 'v1.0.0'
 // =====================================
