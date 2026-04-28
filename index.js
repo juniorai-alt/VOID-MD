@@ -7,10 +7,14 @@ const qrcode = require('qrcode')
 const app = express()
 const PORT = process.env.PORT || 3000
 
-const BOT_NAME = 'UNBORN-BOT V1.0'
-const OWNER_NAME = 'UNBORN GEN-JUNIOR'
-const OWNER_NUMBER = '254112843071' // CHANGE THIS TO YOUR NUMBER
-const BOT_IMAGE = 'https://i.imgur.com/4M7IWwP.jpg' // You can change this image
+// === CONFIG - CHANGE THESE 2 LINES ===
+const BOT_NAME = 'VOID-MD'
+const OWNER_NAME = 'YOUR NAME HERE' // CHANGE THIS
+const OWNER_NUMBER = '254112843071' // CHANGE THIS TO YOUR NUMBER WITH 254
+const BOT_IMAGE = 'https://telegra.ph/file/24fa902ead26340f3df2c.png'
+const VERSION = 'v1.0.0'
+// =====================================
+
 const startTime = Date.now()
 let qrCode = null
 let botConnected = false
@@ -24,7 +28,7 @@ async function connectBot() {
         logger: pino({ level: 'silent' }),
         printQRInTerminal: false,
         auth: state,
-        browser: ['UNBORN-BOT', 'Chrome', '1.0.0']
+        browser: ['VOID-MD', 'Chrome', '1.0.0']
     })
 
     sock.ev.on('connection.update', (update) => {
@@ -39,7 +43,7 @@ async function connectBot() {
             const shouldReconnect = (lastDisconnect.error)?.output?.statusCode!== DisconnectReason.loggedOut
             if(shouldReconnect) setTimeout(connectBot, 5000)
         } else if(connection === 'open') {
-            console.log('✅ Bot Connected!')
+            console.log('✅ VOID-MD Connected!')
             botConnected = true
             qrCode = null
         }
@@ -67,53 +71,49 @@ async function connectBot() {
             day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit'
         })
 
-        if (cmd === '.menu') {
+        if (cmd === '.menu' || cmd === '.help') {
             const menu = `
-┏━━━❖ ❤️🔥 ${BOT_NAME} 🔥❤️ ❖━━━┓
-┃ 👑 Owner: ${OWNER_NAME}
-┃ 🕐 ${timeEAT} EAT
-┃ ⏱️ Uptime: ${uptime()}
-┃ 🌐 Hosted on Render
-┗━━━━━━━━━━━━━━━━━━━━━┛
+╭━━━『 ${BOT_NAME} 』━━━╮
+┃ ⚡ *Owner:* ${OWNER_NAME}
+┃ 🕐 *Time:* ${timeEAT} EAT
+┃ ⏱️ *Uptime:* ${uptime()}
+┃ 📍 *Version:* ${VERSION}
+╰━━━━━━━━━━━━━━━━━━━━╯
 
 *COMMANDS*
-.menu - Show menu
-.ping - Bot speed
-.owner - Contact dev
+.menu - Show this menu
+.ping - Check speed
+.owner - Owner info
 .time - Current time
-.vcf - 404 ERROR VCF app
 
-Developed by UNBORN GEN-JUNIOR AI`
+_Powered by VOID-MD_`
             await sock.sendMessage(from, { image: { url: BOT_IMAGE }, caption: menu })
         }
         else if (cmd === '.ping') {
             const start = Date.now()
-            await sock.sendMessage(from, { text: `📊 Speed: ${Date.now() - start}ms` })
+            await sock.sendMessage(from, { text: `*VOID-MD SPEED*\n📊 Response: ${Date.now() - start}ms` })
         }
         else if (cmd === '.owner') {
-            await sock.sendMessage(from, { text: `👑 *Owner*: ${OWNER_NAME}\n📱 wa.me/${OWNER_NUMBER}` })
+            await sock.sendMessage(from, { text: `*VOID-MD OWNER*\n👑 Name: ${OWNER_NAME}\n📱 Contact: wa.me/${OWNER_NUMBER}` })
         }
         else if (cmd === '.time') {
-            await sock.sendMessage(from, { text: `🕐 *EAT Time*\n${timeEAT}` })
-        }
-        else if (cmd === '.vcf') {
-            await sock.sendMessage(from, { text: `🔥 *404 ERROR VCF* 🔥\n\nhttps://excellpro.netlify.app` })
+            await sock.sendMessage(from, { text: `*EAST AFRICA TIME*\n🕐 ${timeEAT}` })
         }
     })
 }
 
 app.get('/', async (req, res) => {
     if (botConnected) {
-        res.send('<h1>✅ UNBORN-BOT is online!</h1><p>Send.menu to your bot number</p>')
+        res.send('<h1>✅ VOID-MD is online!</h1><p>Send.menu to your bot number</p>')
     } else if (qrCode) {
         const qrImage = await qrcode.toDataURL(qrCode)
-        res.send(`<h1>Scan QR to Connect Bot</h1><p>WhatsApp → Linked Devices → Link Device</p><img src="${qrImage}"><script>setTimeout(() => location.reload(), 20000)</script>`)
+        res.send(`<h1>Scan QR to Connect VOID-MD</h1><p>WhatsApp → Linked Devices → Link Device</p><img src="${qrImage}"><script>setTimeout(() => location.reload(), 20000)</script>`)
     } else {
-        res.send('<h1>Starting bot...</h1><p>Refresh in 15 seconds</p><script>setTimeout(() => location.reload(), 15000)</script>')
+        res.send('<h1>Starting VOID-MD...</h1><p>Refresh in 15 seconds</p><script>setTimeout(() => location.reload(), 15000)</script>')
     }
 })
 
 app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`)
+    console.log(`VOID-MD Server running on port ${PORT}`)
     connectBot()
 })
