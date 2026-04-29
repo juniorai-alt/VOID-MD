@@ -5,9 +5,8 @@ module.exports = {
     name: 'autonline',
     alias: ['online', 'alwaysonline'],
     desc: 'Show bot as online 24/7',
-    execute: async ({ sock, m, from, isOwner, args, PREFIX, reply }) => {
+    execute: async ({ sock, m, from, args, PREFIX, reply }) => {
         await sock.sendMessage(from, { react: { text: '🟢', key: m.key } })
-        if (!isOwner) return reply('Owner only')
 
         const configPath = path.join(__dirname, '../config.json')
         let config = JSON.parse(fs.readFileSync(configPath))
@@ -15,7 +14,7 @@ module.exports = {
         if (args[0] === 'on') {
             config.autonline = true
             config.autotyping = false
-            config.autorecording = false // Online overrides typing/recording
+            config.autorecording = false
             fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
             await sock.sendPresenceUpdate('available')
             await reply('✅ *Auto Online ON*\nBot now shows "online" 24/7\n\n⚠️ Disables auto typing/recording')
