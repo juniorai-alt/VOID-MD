@@ -24,13 +24,16 @@ let isConnected = false
 // Command loader
 const commands = new Map()
 const cmdDir = path.join(__dirname, 'commands')
-fs.readdirSync(cmdDir).forEach(file => {
-    if (file.endsWith('.js')) {
-        const cmd = require(path.join(cmdDir, file))
-        commands.set(cmd.name, cmd)
-        if (cmd.alias) cmd.alias.forEach(a => commands.set(a, cmd))
-    }
-})
+
+if (fs.existsSync(cmdDir)) {
+    fs.readdirSync(cmdDir).forEach(file => {
+        if (file.endsWith('.js')) {
+            const cmd = require(path.join(cmdDir, file))
+            commands.set(cmd.name, cmd)
+            if (cmd.alias) cmd.alias.forEach(a => commands.set(a, cmd))
+        }
+    })
+}
 console.log(`Loaded ${commands.size} commands`)
 
 async function startBot() {
@@ -69,12 +72,6 @@ async function startBot() {
         }
     })
 
-    sock.ev.on('presence.update', async ({ id, presences }) => {
-        if (config.autonline) {
-            await sock.sendPresenceUpdate('available')
-        }
-    })
-
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
         if (type!== 'notify') return
         const m = messages[0]
@@ -98,21 +95,6 @@ async function startBot() {
             await sock.sendPresenceUpdate('recording', from)
         }
 
-        if (isGroup && config.antilink && body.match(/chat\.whatsapp\.com\/[a-zA-Z0-9]/)) {
-            const groupMetadata = await sock.groupMetadata(from)
-            const isAdmin = groupMetadata.participants.find(p => p.id === sender)?.admin!== null
-            const botAdmin = groupMetadata.participants.find(p => p.id === sock.user.id)?.admin!== null
-            if (!isAdmin && botAdmin) {
-                await sock.sendMessage(from, { delete: m.key })
-                await sock.groupParticipantsUpdate(from, [sender], 'remove')
-                await sock.sendMessage(from, { text: `⚠️ @${sender.split('@')[0]} removed for sending group link`, mentions: [sender] })
-            }
-        }
-
-        if (config.chatbot && body.toLowerCase().includes(BOT_NAME.toLowerCase()) &&!cmd) {
-            await sock.sendMessage(from, { text: `Yo! You called ${BOT_NAME}? Type ${PREFIX}menu for commands 💀` }, { quoted: m })
-        }
-
         if (!body.startsWith(PREFIX)) return
         if (!cmd) return
 
@@ -120,19 +102,8 @@ async function startBot() {
 
         try {
             await cmd.execute({
-                sock,
-                m,
-                from,
-                sender,
-                isGroup,
-                isOwner,
-                args,
-                body,
-                PREFIX,
-                BOT_NAME,
-                OWNER_NUMBER,
-                BOT_IMAGE,
-                VERSION,
+                sock, m, from, sender, isGroup, isOwner, args, body,
+                PREFIX, BOT_NAME, OWNER_NAME, OWNER_NUMBER, BOT_IMAGE, VERSION, commands,
                 uptime: () => {
                     let s = Math.floor((Date.now() - startTime) / 1000)
                     let h = Math.floor(s / 3600), min = Math.floor(s % 3600 / 60)
@@ -149,43 +120,6 @@ async function startBot() {
         } catch (e) {
             console.error(e)
             reply(`❌ Error: ${e.message}`)
-        }
-    })
-
-    sock.ev.on('group-participants.update', async ({ id, participants, action }) => {
-        if (!config.welcome) return
-        const groupMetadata = await sock.groupMetadata(id)
-        for (let user of participants) {
-            if (action === 'add') {
-                await sock.sendMessage(id, {
-                    image: { url: BOT_IMAGE },
-                    caption: `👋 *WELCOME* @${user.split('@')[0]}\n\nWelcome to *${groupMetadata.subject}*\n\n📝 Read group description\n✅ Follow rules\n💬 Enjoy!`,
-                    mentions: [user]
-                })
-            } else if (action === 'remove') {
-                await sock.sendMessage(id, {
-                    text: `👋 Goodbye @${user.split('@')[0]}`,
-                    mentions: [user]
-                })
-            }
-        }
-    })
-
-    sock.ev.on('messages.update', async (updates) => {
-        if (!config.antidelete) return
-        for (const { key, update } of updates) {
-            if (update.messageStubType === 68) {
-                try {
-                    const msg = await sock.loadMessage(key.remoteJid, key.id)
-                    if (!msg || key.fromMe) return
-                    const sender = key.participant || key.remoteJid
-                    const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || 'Media message'
-                    await sock.sendMessage(key.remoteJid, {
-                        text: `🗑️ *ANTI DELETE*\n\n👤 @${sender.split('@')[0]} deleted:\n\n${text}`,
-                        mentions: [sender]
-                    })
-                } catch {}
-            }
         }
     })
 }
