@@ -4,7 +4,7 @@ const fs = require('fs')
 const path = require('path')
 const pino = require('pino')
 const express = require('express')
-const qrcode = require('qrcode-terminal') // 👈 Added this
+const qrcode = require('qrcode') // 👈 Changed from qrcode-terminal
 const app = express()
 
 // === CONFIG ===
@@ -18,6 +18,8 @@ const PREFIX = '.'
 
 const startTime = Date.now()
 let config = JSON.parse(fs.readFileSync('./config.json'))
+let qrCodeData = null // Store QR here
+let isConnected = false
 
 // Command loader
 const commands = new Map()
@@ -41,7 +43,7 @@ async function startBot() {
             creds: state.creds,
             keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'fatal' }))
         },
-        logger: pino({ level: 'fatal' }), // Removed printQRInTerminal
+        logger: pino({ level: 'fatal' }),
         browser: ['VOID-MD', 'Chrome', '1.0.0'],
         markOnlineOnConnect: config.autonline,
         generateHighQualityLinkPreview: true
@@ -49,17 +51,21 @@ async function startBot() {
 
     sock.ev.on('creds.update', saveCreds)
 
-    // ✅ QR CODE FIX HERE
-    sock.ev.on('connection.update', ({ connection, lastDisconnect, qr }) => {
+    // ✅ QR ON WEBPAGE FIX
+    sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
         if (qr) {
-            console.log('SCAN THIS QR CODE:')
-            qrcode.generate(qr, { small: true })
+            qrCodeData = await qrcode.toDataURL(qr) // Convert to image
+            console.log('QR generated - visit your Render URL to scan')
         }
 
         if (connection === 'close') {
+            isConnected = false
+            qrCodeData = null
             const shouldReconnect = (lastDisconnect?.error instanceof Boom)?.output?.statusCode!== DisconnectReason.loggedOut
             if (shouldReconnect) startBot()
         } else if (connection === 'open') {
+            isConnected = true
+            qrCodeData = null
             console.log(`✅ ${BOT_NAME} Connected!`)
         }
     })
@@ -167,10 +173,10 @@ async function startBot() {
                 await sock.sendMessage(id, {
                     image: { url: BOT_IMAGE },
                     caption: `👋 *WELCOME* @${user.split('@')[0]}\n\nWelcome to *${groupMetadata.subject}*\n\n📝 Read group description\n✅ Follow rules\n💬 Enjoy!`,
-                    mentions: [user]
+                    mentions:
                 })
             } else if (action === 'remove') {
-                await sock.sendMessage(id, { text: `👋 Goodbye @${user.split('@')[0]}`, mentions: [user] })
+                await sock.sendMessage(id, { text: `👋 Goodbye @${user.split('@')[0]}`, mentions: })
             }
         }
     })
@@ -197,6 +203,42 @@ async function startBot() {
 
 startBot()
 
-// Keep alive for Render
-app.get('/', (req, res) => res.send(`${BOT_NAME} Running!`))
+// ✅ WEBPAGE ROUTE - SHOWS QR
+app.get('/', (req, res) => {
+    if (isConnected) {
+        res.send(`
+            <html>
+                <head><title>${BOT_NAME}</title></head>
+                <body style="background:#000;color:#0f0;text-align:center;padding:50px;font-family:monospace">
+                    <h1>✅ ${BOT_NAME} Running!</h1>
+                    <p>Bot is connected to WhatsApp</p>
+                    <img src="${BOT_IMAGE}" width="200" style="border-radius:20px;margin-top:20px">
+                </body>
+            </html>
+        `)
+    } else if (qrCodeData) {
+        res.send(`
+            <html>
+                <head><title>Scan QR - ${BOT_NAME}</title></head>
+                <body style="background:#000;color:#fff;text-align:center;padding:20px;font-family:monospace">
+                    <h1>${BOT_NAME} - Scan QR Code</h1>
+                    <p>Open WhatsApp > Linked Devices > Link Device</p>
+                    <img src="${qrCodeData}" style="border:10px solid #25D366;border-radius:20px;margin:20px">
+                    <p>QR expires in 20 seconds. Refresh if needed.</p>
+                </body>
+            </html>
+        `)
+    } else {
+        res.send(`
+            <html>
+                <body style="background:#000;color:#fff;text-align:center;padding:50px;font-family:monospace">
+                    <h1>${BOT_NAME} Starting...</h1>
+                    <p>Generating QR code... Refresh in 5 seconds</p>
+                    <script>setTimeout(()=>location.reload(),5000)</script>
+                </body>
+            </html>
+        `)
+    }
+})
+
 app.listen(process.env.PORT || 10000, () => console.log('VOID-MD Server running on port 10000'))
