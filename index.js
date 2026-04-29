@@ -2,32 +2,27 @@ const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLat
 const { Boom } = require('@hapi/boom')
 const pino = require('pino')
 const express = require('express')
-const yts = require('yt-search')
+const qrcode = require('qrcode')
 const fs = require('fs')
 
 const app = express()
 const PORT = process.env.PORT || 3000
 
-// ===== CONFIG - CHANGE THESE =====
+// === CONFIG ===
 const BOT_NAME = 'VOID-MD'
-const OWNER_NUMBER = '254112843071' // CHANGE: no + or spaces
-const BOT_IMAGE = 'https://i.imgur.com/YOUR_BANNER.png' // CHANGE
-const VERSION = 'v3.1.0'
-const PREFIX = '.'
-// =================================
+const OWNER_NAME = 'Mr Void' // Your name set
+const OWNER_NUMBER = '254112843071' // Your number
+const BOT_IMAGE = 'https://telegra.ph/file/24fa902ead26340f3df2c.png'
+const VERSION = 'v1.0.0'
+const PREFIX = '.' // Command prefix
+// =============================
 
-let botConnected = false
 const startTime = Date.now()
-
-// DB Setup
-if (!fs.existsSync('./database.json')) {
-    fs.writeFileSync('./database.json', JSON.stringify({ data: { antilink: {}, welcome: {} } }, null, 2))
-}
-global.db = JSON.parse(fs.readFileSync('./database.json'))
-const saveDB = () => fs.writeFileSync('./database.json', JSON.stringify(global.db, null, 2))
+let qrCode = null
+let botConnected = false
 
 async function connectBot() {
-    const { state, saveCreds } = await useMultiFileAuthState('session')
+    const { state, saveCreds } = await useMultiFileAuthState('auth_info')
     const { version } = await fetchLatestBaileysVersion()
 
     const sock = makeWASocket({
@@ -35,74 +30,41 @@ async function connectBot() {
         logger: pino({ level: 'silent' }),
         printQRInTerminal: false,
         auth: state,
-        browser: [BOT_NAME, 'Chrome', VERSION]
+        browser: ['VOID-MD', 'Chrome', '1.0.0']
     })
 
-    // ===== PAIRING CODE =====
-    if (!sock.authState.creds.registered) {
-        setTimeout(async () => {
-            const code = await sock.requestPairingCode(OWNER_NUMBER)
-            console.log(`\n\n========================================`)
-            console.log(` PAIRING CODE: ${code}`)
-            console.log(`========================================`)
-            console.log(`WhatsApp → Linked Devices → Link with phone number`)
-            console.log(`Enter code: ${code}\n\n`)
-        }, 3000)
-    }
-    // ========================
-
     sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect } = update
-        if (connection === 'close') {
+        const { connection, lastDisconnect, qr } = update
+        if(qr) {
+            qrCode = qr
             botConnected = false
-            const shouldReconnect = lastDisconnect.error?.output?.statusCode!== DisconnectReason.loggedOut
-            if (shouldReconnect) setTimeout(connectBot, 5000)
-        } else if (connection === 'open') {
-            console.log(`✅ ${BOT_NAME} Connected!`)
+            console.log('QR Generated')
+        }
+        if(connection === 'close') {
+            botConnected = false
+            const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode!== DisconnectReason.loggedOut
+            if(shouldReconnect) setTimeout(connectBot, 5000)
+        } else if(connection === 'open') {
+            console.log('✅ VOID-MD Connected!')
             botConnected = true
+            qrCode = null
         }
     })
 
     sock.ev.on('creds.update', saveCreds)
 
-    // Welcome message
-    sock.ev.on('group-participants.update', async (anu) => {
-        try {
-            const metadata = await sock.groupMetadata(anu.id)
-            if (anu.action === 'add' && global.db.data.welcome[anu.id] === 'on') {
-                for (let user of anu.participants) {
-                    await sock.sendMessage(anu.id, {
-                        text: `*WELCOME* 👋\n\n@${user.split('@')[0]} joined *${metadata.subject}*\n\nMembers: ${metadata.participants.length}\nRead group rules!`,
-                        mentions: [user]
-                    })
-                }
-            }
-        } catch (e) {}
-    })
-
     sock.ev.on('messages.upsert', async ({ messages }) => {
         const m = messages[0]
-        if (!m.message || m.key.fromMe || m.key.remoteJid === 'status@broadcast') return
+        if (!m.message || m.key.fromMe) return
 
         const from = m.key.remoteJid
-        const isGroup = from.endsWith('@g.us')
-        const sender = m.key.participant || from
+        const sender = m.key.participant || m.key.remoteJid
         const body = m.message.conversation || m.message.extendedTextMessage?.text || m.message.imageMessage?.caption || ''
-        const args = body.trim().split(/ +/).slice(1)
-        const command = body.startsWith(PREFIX)? body.slice(PREFIX.length).trim().split(' ')[0].toLowerCase() : ''
-        const text = args.join(' ')
-        const mentioned = m.message.extendedTextMessage?.contextInfo?.mentionedJid || []
-        const isOwner = sender.split('@')[0] === OWNER_NUMBER
 
-        m.reply = (txt) => sock.sendMessage(from, { text: txt }, { quoted: m })
+        if (!body.startsWith(PREFIX)) return
 
-        let groupAdmins = [], isBotAdmin = false, isSenderAdmin = false
-        if (isGroup) {
-            const metadata = await sock.groupMetadata(from)
-            groupAdmins = metadata.participants.filter(p => p.admin).map(p => p.id)
-            isBotAdmin = groupAdmins.includes(sock.user.id.split(':')[0] + '@s.whatsapp.net')
-            isSenderAdmin = groupAdmins.includes(sender)
-        }
+        const args = body.slice(PREFIX.length).trim().split(' ')
+        const cmd = args.shift().toLowerCase()
 
         const uptime = () => {
             let s = Math.floor((Date.now() - startTime) / 1000)
@@ -111,153 +73,113 @@ async function connectBot() {
             return `${h}h ${m}m ${s}s`
         }
 
-        // Anti-link check
-        if (isGroup && global.db.data.antilink[from] === 'on' &&!isSenderAdmin &&!isOwner) {
-            if (body.match(/chat\.whatsapp\.com|https?:\/\/|www\.|t\.me|bit\.ly/i)) {
-                await sock.sendMessage(from, { delete: m.key })
-                await m.reply(`*ANTI-LINK* ⚠️\n@${sender.split('@')[0]} links not allowed!`, { mentions: [sender] })
-                if (isBotAdmin) await sock.groupParticipantsUpdate(from, [sender], 'remove')
-                return
-            }
+        const timeEAT = new Date().toLocaleString('en-KE', {
+            timeZone: 'Africa/Nairobi', year: 'numeric', month: '2-digit',
+            day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit'
+        })
+
+        const reply = async (text) => await sock.sendMessage(from, { text }, { quoted: m })
+
+        // ===== COMMANDS =====
+
+        if (cmd === 'menu' || cmd === 'help') {
+            const menu = `
+╭━━━『 ${BOT_NAME} 』━━━╮
+┃ ⚡ *Owner:* ${OWNER_NAME}
+┃ 🕐 *Time:* ${timeEAT} EAT
+┃ ⏱️ *Uptime:* ${uptime()}
+┃ 📍 *Version:* ${VERSION}
+┃ 🤖 *Prefix:* ${PREFIX}
+╰━━━━━━━━━━━━━━━━━━━━╯
+
+*MAIN COMMANDS*
+${PREFIX}menu - Show this menu
+${PREFIX}ping - Check bot speed
+${PREFIX}owner - Owner info
+${PREFIX}time - Current EAT time
+${PREFIX}runtime - Bot uptime
+
+*FUN COMMANDS*
+${PREFIX}say <text> - Bot repeats text
+${PREFIX}joke - Random joke
+
+*GROUP COMMANDS*
+${PREFIX}tagall - Tag everyone
+${PREFIX}hidetag <text> - Hidden tag
+
+_Powered by VOID-MD_`
+            await sock.sendMessage(from, { image: { url: BOT_IMAGE }, caption: menu })
         }
 
-        try {
-            switch (command) {
-                case 'menu': {
-                    const menu = `
-╭─── *${BOT_NAME} ${VERSION}* ───╮
-│ Prefix: ${PREFIX}
-│ Uptime: ${uptime()}
-╰────────────────╯
-
-*MAIN*
-${PREFIX}ping - Speed test
-${PREFIX}play <song> - YouTube search
-${PREFIX}owner - Owner contact
-
-*GROUP ADMIN*
-${PREFIX}kick @user - Remove user
-${PREFIX}antilink on/off - Anti-link
-${PREFIX}welcome on/off - Welcome msg
-
-*OWNER*
-${PREFIX}ownermenu - Owner commands`
-                    await sock.sendMessage(from, { image: { url: BOT_IMAGE }, caption: menu }, { quoted: m })
-                }
-                break
-
-                case 'ping': {
-                    const start = Date.now()
-                    await m.reply(`*PONG!* ⚡\nSpeed: ${Date.now() - start}ms\nUptime: ${uptime()}`)
-                }
-                break
-
-                case 'play': {
-                    if (!text) return m.reply(`Usage: ${PREFIX}play alan walker faded`)
-                    m.reply('🔍 Searching...')
-                    try {
-                        let search = await yts(text)
-                        let vid = search.videos[0]
-                        if (!vid) return m.reply('❌ Not found')
-                        await sock.sendMessage(from, {
-                            image: { url: vid.thumbnail },
-                            caption: `*YouTube Result*\n\n*Title:* ${vid.title}\n*Duration:* ${vid.timestamp}\n*Views:* ${vid.views.toLocaleString()}\n*Link:* ${vid.url}`
-                        }, { quoted: m })
-                    } catch (e) {
-                        m.reply(`Error: ${e.message}`)
-                    }
-                }
-                break
-
-                case 'kick': {
-                    if (!isGroup) return m.reply('Group only')
-                    if (!isSenderAdmin &&!isOwner) return m.reply('Admin only 💀')
-                    if (!isBotAdmin) return m.reply('Bot needs admin')
-                    if (!mentioned[0]) return m.reply(`Tag user: ${PREFIX}kick @user`)
-                    await sock.groupParticipantsUpdate(from, [mentioned[0]], 'remove')
-                    m.reply(`✅ @${mentioned[0].split('@')[0]} kicked`, { mentions: [mentioned[0]] })
-                }
-                break
-
-                case 'antilink': {
-                    if (!isGroup) return m.reply('Group only')
-                    if (!isSenderAdmin &&!isOwner) return m.reply('Admin only 💀')
-                    if (args[0] === 'on') {
-                        global.db.data.antilink[from] = 'on'; saveDB()
-                        m.reply('✅ *Anti-Link enabled*\nLinks will be deleted + user kicked')
-                    } else if (args[0] === 'off') {
-                        global.db.data.antilink[from] = 'off'; saveDB()
-                        m.reply('✅ *Anti-Link disabled*')
-                    } else {
-                        m.reply(`Anti-Link: ${global.db.data.antilink[from] === 'on'? 'ON' : 'OFF'}\n\nUse: ${PREFIX}antilink on/off`)
-                    }
-                }
-                break
-
-                case 'welcome': {
-                    if (!isGroup) return m.reply('Group only')
-                    if (!isSenderAdmin &&!isOwner) return m.reply('Admin only 💀')
-                    if (args[0] === 'on') {
-                        global.db.data.welcome[from] = 'on'; saveDB()
-                        m.reply('✅ *Welcome enabled*')
-                    } else if (args[0] === 'off') {
-                        global.db.data.welcome[from] = 'off'; saveDB()
-                        m.reply('✅ *Welcome disabled*')
-                    } else {
-                        m.reply(`Welcome: ${global.db.data.welcome[from] === 'on'? 'ON' : 'OFF'}\n\nUse: ${PREFIX}welcome on/off`)
-                    }
-                }
-                break
-
-                case 'owner': {
-                    await sock.sendMessage(from, {
-                        contacts: {
-                            displayName: 'Owner',
-                            contacts: [{ vcard: `BEGIN:VCARD\nVERSION:3.0\nFN:Owner\nTEL;type=CELL;type=VOICE;waid=${OWNER_NUMBER}:+${OWNER_NUMBER}\nEND:VCARD` }]
-                        }
-                    })
-                }
-                break
-
-                case 'ownermenu': {
-                    if (!isOwner) return m.reply('Owner only 💀')
-                    await m.reply(`*👑 OWNER MENU*\n\n${PREFIX}restart - Restart bot\n${PREFIX}getdb - Backup DB`)
-                }
-                break
-
-                case 'restart': {
-                    if (!isOwner) return m.reply('Owner only 💀')
-                    await m.reply('Restarting...')
-                    process.exit()
-                }
-                break
-
-                case 'getdb': {
-                    if (!isOwner) return m.reply('Owner only 💀')
-                    let database = JSON.stringify(global.db.data, null, 2)
-                    await sock.sendMessage(from, {
-                        document: Buffer.from(database),
-                        mimetype: 'application/json',
-                        fileName: `database-${Date.now()}.json`
-                    }, { quoted: m })
-                }
-                break
-            }
-        } catch (e) {
-            console.log(e)
+        else if (cmd === 'ping') {
+            const start = Date.now()
+            await sock.sendMessage(from, { text: `*VOID-MD SPEED*\n📊 Response: ${Date.now() - start}ms` })
         }
+
+        else if (cmd === 'owner') {
+            await sock.sendMessage(from, { text: `*VOID-MD OWNER*\n👑 Name: ${OWNER_NAME}\n📱 Contact: wa.me/${OWNER_NUMBER}` })
+        }
+
+        else if (cmd === 'time' || cmd === 'date') {
+            await sock.sendMessage(from, { text: `*EAST AFRICA TIME*\n🕐 ${timeEAT}` })
+        }
+
+        else if (cmd === 'runtime' || cmd === 'uptime') {
+            await sock.sendMessage(from, { text: `*BOT UPTIME*\n⏱️ ${uptime()}` })
+        }
+
+        else if (cmd === 'say') {
+            const text = args.join(' ')
+            if (!text) return reply(`Usage: ${PREFIX}say Hello World`)
+            await reply(text)
+        }
+
+        else if (cmd === 'joke') {
+            const jokes = [
+                "Why do programmers prefer dark mode? Because light attracts bugs!",
+                "How many programmers does it take to change a light bulb? None, that's a hardware problem.",
+                "Why did the developer go broke? Because he used up all his cache.",
+                "What's a programmer's favorite hangout place? Foo Bar."
+            ]
+            await reply(jokes[Math.floor(Math.random() * jokes.length)])
+        }
+
+        else if (cmd === 'tagall' || cmd === 'everyone') {
+            if (!from.endsWith('@g.us')) return reply('This command only works in groups')
+            const groupMetadata = await sock.groupMetadata(from)
+            const participants = groupMetadata.participants
+            let text = `*TAG ALL*\n`
+            let mentions = []
+            for (let mem of participants) {
+                text += `@${mem.id.split('@')[0]} `
+                mentions.push(mem.id)
+            }
+            await sock.sendMessage(from, { text, mentions })
+        }
+
+        else if (cmd === 'hidetag') {
+            if (!from.endsWith('@g.us')) return reply('This command only works in groups')
+            const groupMetadata = await sock.groupMetadata(from)
+            const participants = groupMetadata.participants.map(u => u.id)
+            const text = args.join(' ') || 'Hidden tag'
+            await sock.sendMessage(from, { text, mentions: participants })
+        }
+
     })
 }
 
-app.get('/', (req, res) => {
+app.get('/', async (req, res) => {
     if (botConnected) {
-        res.send(`<h1>✅ ${BOT_NAME} ${VERSION} Online</h1><p>Bot is running</p>`)
+        res.send('<h1>✅ VOID-MD is online!</h1><p>Send.menu to your bot number</p>')
+    } else if (qrCode) {
+        const qrImage = await qrcode.toDataURL(qrCode)
+        res.send(`<h1>Scan QR to Connect VOID-MD</h1><p>WhatsApp → Linked Devices → Link Device</p><img src="${qrImage}"><script>setTimeout(() => location.reload(), 20000)</script>`)
     } else {
-        res.send(`<h1>🔄 ${BOT_NAME} Connecting...</h1><p>Check Render logs for pairing code</p>`)
+        res.send('<h1>Starting VOID-MD...</h1><p>Refresh in 15 seconds</p><script>setTimeout(() => location.reload(), 15000)</script>')
     }
 })
 
 app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`)
+    console.log(`VOID-MD Server running on port ${PORT}`)
     connectBot()
 })
