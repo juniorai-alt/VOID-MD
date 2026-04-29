@@ -1,20 +1,23 @@
 {
   "name": "void-md",
-  "version": "1.0.0",
-  "description": "VOID-MD WhatsApp Bot for Render",
+  "version": "1.2.0",
+  "description": "VOID-MD WhatsApp Bot",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "engines": {
-    "node": ">=18"
-  },
+  "keywords": ["whatsapp", "bot", "baileys"],
+  "author": "Mr Void",
+  "license": "ISC",
   "dependencies": {
-    "@whiskeysockets/baileys": "latest",
+    "@whiskeysockets/baileys": "^6.7.8",
     "@hapi/boom": "^10.0.1",
     "pino": "^8.17.2",
-    "qrcode": "^1.5.3",
     "express": "^4.18.2",
-    "axios": "^1.6.0"
+    "qrcode-terminal": "^0.12.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
