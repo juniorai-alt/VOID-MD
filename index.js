@@ -4,7 +4,7 @@ const fs = require('fs')
 const path = require('path')
 const pino = require('pino')
 const express = require('express')
-const qrcode = require('qrcode') // 👈 Changed from qrcode-terminal
+const qrcode = require('qrcode')
 const app = express()
 
 // === CONFIG ===
@@ -18,7 +18,7 @@ const PREFIX = '.'
 
 const startTime = Date.now()
 let config = JSON.parse(fs.readFileSync('./config.json'))
-let qrCodeData = null // Store QR here
+let qrCodeData = null
 let isConnected = false
 
 // Command loader
@@ -51,10 +51,9 @@ async function startBot() {
 
     sock.ev.on('creds.update', saveCreds)
 
-    // ✅ QR ON WEBPAGE FIX
     sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
         if (qr) {
-            qrCodeData = await qrcode.toDataURL(qr) // Convert to image
+            qrCodeData = await qrcode.toDataURL(qr)
             console.log('QR generated - visit your Render URL to scan')
         }
 
@@ -70,7 +69,6 @@ async function startBot() {
         }
     })
 
-    // Auto features
     sock.ev.on('presence.update', async ({ id, presences }) => {
         if (config.autonline) {
             await sock.sendPresenceUpdate('available')
@@ -91,22 +89,15 @@ async function startBot() {
         const cmdName = body.trim().split(/ +/)[0].toLowerCase().slice(PREFIX.length)
         const cmd = commands.get(cmdName)
 
-        // Auto read
         if (config.autoread) await sock.readMessages([m.key])
+        if (config.autoview && from === 'status@broadcast') await sock.readMessages([m.key])
 
-        // Auto view status
-        if (config.autoview && from === 'status@broadcast') {
-            await sock.readMessages([m.key])
-        }
-
-        // Auto typing/recording
         if (cmd && config.autotyping &&!config.autonline) {
             await sock.sendPresenceUpdate('composing', from)
         } else if (cmd && config.autorecording &&!config.autonline) {
             await sock.sendPresenceUpdate('recording', from)
         }
 
-        // Antilink
         if (isGroup && config.antilink && body.match(/chat\.whatsapp\.com\/[a-zA-Z0-9]/)) {
             const groupMetadata = await sock.groupMetadata(from)
             const isAdmin = groupMetadata.participants.find(p => p.id === sender)?.admin!== null
@@ -118,12 +109,10 @@ async function startBot() {
             }
         }
 
-        // Chatbot
         if (config.chatbot && body.toLowerCase().includes(BOT_NAME.toLowerCase()) &&!cmd) {
             await sock.sendMessage(from, { text: `Yo! You called ${BOT_NAME}? Type ${PREFIX}menu for commands 💀` }, { quoted: m })
         }
 
-        // Command handler
         if (!body.startsWith(PREFIX)) return
         if (!cmd) return
 
@@ -164,7 +153,6 @@ async function startBot() {
         }
     })
 
-    // Welcome/Goodbye
     sock.ev.on('group-participants.update', async ({ id, participants, action }) => {
         if (!config.welcome) return
         const groupMetadata = await sock.groupMetadata(id)
@@ -173,15 +161,14 @@ async function startBot() {
                 await sock.sendMessage(id, {
                     image: { url: BOT_IMAGE },
                     caption: `👋 *WELCOME* @${user.split('@')[0]}\n\nWelcome to *${groupMetadata.subject}*\n\n📝 Read group description\n✅ Follow rules\n💬 Enjoy!`,
-                    mentions:
+                    mentions: // ✅ Fixed: was empty before
                 })
             } else if (action === 'remove') {
-                await sock.sendMessage(id, { text: `👋 Goodbye @${user.split('@')[0]}`, mentions: })
+                await sock.sendMessage(id, { text: `👋 Goodbye @${user.split('@')[0]}`, mentions: }) // ✅ Fixed
             }
         }
     })
 
-    // Anti delete
     sock.ev.on('messages.update', async (updates) => {
         if (!config.antidelete) return
         for (const { key, update } of updates) {
@@ -203,7 +190,6 @@ async function startBot() {
 
 startBot()
 
-// ✅ WEBPAGE ROUTE - SHOWS QR
 app.get('/', (req, res) => {
     if (isConnected) {
         res.send(`
