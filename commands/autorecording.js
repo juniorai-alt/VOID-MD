@@ -5,16 +5,15 @@ module.exports = {
     name: 'autorecording',
     alias: ['recording', 'autorec'],
     desc: 'Show recording indicator when processing commands',
-    execute: async ({ sock, m, from, isOwner, args, PREFIX, reply }) => {
+    execute: async ({ sock, m, from, args, PREFIX, reply }) => {
         await sock.sendMessage(from, { react: { text: '🎙️', key: m.key } })
-        if (!isOwner) return reply('Owner only')
 
         const configPath = path.join(__dirname, '../config.json')
         let config = JSON.parse(fs.readFileSync(configPath))
 
         if (args[0] === 'on') {
             config.autorecording = true
-            config.autotyping = false // Can't have both
+            config.autotyping = false
             fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
             await reply('✅ *Auto Recording ON*\nBot shows "recording audio..." when running commands')
         } else if (args[0] === 'off') {
