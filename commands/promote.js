@@ -9,7 +9,7 @@ module.exports = {
         if (!isAdmin &&!isOwner) return reply('Admin only')
         const user = mentioned[0] || (quoted? quoted.sender : null)
         if (!user) return reply('Tag or reply to user')
-        await sock.groupParticipantsUpdate(from, [user], 'promote') // ✅ Fixed
+        await sock.groupParticipantsUpdate(from, [user], 'promote')
         await reply(`Promoted @${user.split('@')[0]} to admin`)
     }
 }
