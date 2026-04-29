@@ -1,11 +1,11 @@
 {
-  "welcome": false,
-  "antilink": false,
   "autoread": false,
-  "antidelete": false,
-  "chatbot": false,
-  "autoview": false,
   "autotyping": false,
   "autorecording": false,
-  "autonline": false
+  "autonline": false,
+  "autoview": false,
+  "chatbot": false,
+  "antilink": false,
+  "welcome": true,
+  "antidelete": false
 }
