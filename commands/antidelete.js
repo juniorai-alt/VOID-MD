@@ -3,11 +3,9 @@ const path = require('path')
 
 module.exports = {
     name: 'antidelete',
-    alias: ['antidel'],
-    desc: 'Recover deleted messages',
-    execute: async ({ sock, m, from, isOwner, args, PREFIX, reply }) => {
+    desc: 'Toggle anti delete - recover deleted messages',
+    execute: async ({ sock, m, from, args, PREFIX, reply }) => {
         await sock.sendMessage(from, { react: { text: '🗑️', key: m.key } })
-        if (!isOwner) return reply('Owner only')
 
         const configPath = path.join(__dirname, '../config.json')
         let config = JSON.parse(fs.readFileSync(configPath))
@@ -22,7 +20,7 @@ module.exports = {
             await reply('❌ *Anti Delete OFF*')
         } else {
             const status = config.antidelete? 'ON ✅' : 'OFF ❌'
-            await reply(`*ANTIDELETE STATUS:* ${status}\n\nUsage: ${PREFIX}antidelete on/off`)
+            await reply(`*ANTI DELETE STATUS:* ${status}\n\nUsage: ${PREFIX}antidelete on/off`)
         }
     }
 }
