@@ -3,29 +3,17 @@ const path = require('path')
 
 module.exports = {
     name: 'settings',
-    alias: ['setting', 'config', 'toggles'],
-    desc: 'Show all bot feature toggles',
-    execute: async ({ sock, m, from, isOwner, PREFIX, reply }) => {
+    alias: ['config'],
+    desc: 'Show all bot settings',
+    execute: async ({ sock, m, from, PREFIX, BOT_NAME, reply }) => {
         await sock.sendMessage(from, { react: { text: '⚙️', key: m.key } })
-        if (!isOwner) return reply('Owner only')
 
         const configPath = path.join(__dirname, '../config.json')
-        let config = {
-            welcome: false,
-            antilink: false,
-            autoread: true,
-            antidelete: false,
-            chatbot: false,
-            autoview: false
-        }
+        let config = JSON.parse(fs.readFileSync(configPath))
 
-        if (fs.existsSync(configPath)) {
-            config = JSON.parse(fs.readFileSync(configPath))
-        }
+        const status = (val) => val? 'ON ✅' : 'OFF ❌'
 
-        const status = (state) => state? 'ON ✅' : 'OFF ❌'
-
-        const text = `*⚙️ VOID-MD SETTINGS*
+        const text = `*⚙️ ${BOT_NAME} SETTINGS*
 
 *👋 WELCOME*
 ┃ Status: ${status(config.welcome)}
@@ -37,7 +25,7 @@ module.exports = {
 ┃ Toggle: ${PREFIX}antilink on/off
 ┃
 
-*👀 AUTO READ*
+*📖 AUTO READ*
 ┃ Status: ${status(config.autoread)}
 ┃ Toggle: ${PREFIX}autoread on/off
 ┃
@@ -55,6 +43,21 @@ module.exports = {
 *👁️ AUTO VIEW STATUS*
 ┃ Status: ${status(config.autoview)}
 ┃ Toggle: ${PREFIX}autoview on/off
+┃
+
+*⌨️ AUTO TYPING*
+┃ Status: ${status(config.autotyping)}
+┃ Toggle: ${PREFIX}autotyping on/off
+┃
+
+*🎙️ AUTO RECORDING*
+┃ Status: ${status(config.autorecording)}
+┃ Toggle: ${PREFIX}autorecording on/off
+┃
+
+*🟢 AUTO ONLINE*
+┃ Status: ${status(config.autonline)}
+┃ Toggle: ${PREFIX}autonline on/off
 ┃
 
 _Powered by VOID-MD_`
