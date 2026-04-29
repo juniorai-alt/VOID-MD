@@ -1,10 +1,9 @@
 module.exports = {
     name: 'ping',
-    desc: 'Check bot response speed',
-    execute: async ({ sock, m, from, reply }) => {
+    alias: ['p'],
+    desc: 'Check bot speed',
+    execute: async ({ reply }) => {
         const start = Date.now()
-        await sock.sendMessage(from, { react: { text: '🏓', key: m.key } })
-        const end = Date.now()
-        await reply(`🏓 *PONG!*\n\n⚡ Speed: ${end - start}ms`)
+        reply(`🏓 Pong! ${Date.now() - start}ms`)
     }
 }
