@@ -10,7 +10,7 @@ module.exports = {
         if (!isAdmin &&!isOwner) return reply('Admin only')
         const user = mentioned[0] || (quoted? quoted.sender : null)
         if (!user) return reply('Tag or reply to user')
-        await sock.groupParticipantsUpdate(from, [user], 'remove') // ✅ Fixed
+        await sock.groupParticipantsUpdate(from, [user], 'remove')
         await reply(`Kicked @${user.split('@')[0]}`)
     }
 }
