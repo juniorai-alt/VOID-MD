@@ -1,16 +1,17 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, jidNormalizedUser } = require('@whiskeysockets/baileys')
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, makeCacheableSignalKeyStore } = require('@whiskeysockets/baileys')
 const { Boom } = require('@hapi/boom')
 const fs = require('fs')
 const path = require('path')
 const pino = require('pino')
 const express = require('express')
+const qrcode = require('qrcode-terminal') // 👈 Added this
 const app = express()
 
 // === CONFIG ===
 const BOT_NAME = 'VOID-MD'
 const OWNER_NAME = 'Mr Void'
-const OWNER_NUMBER = '254112843071' // 👈 Change to your number
-const BOT_IMAGE = 'https://files.catbox.moe/bhiw6e.png' // ✅ Updated with your link
+const OWNER_NUMBER = '254112843071'
+const BOT_IMAGE = 'https://files.catbox.moe/bhiw6e.png'
 const VERSION = 'v1.2.0'
 const PREFIX = '.'
 // =============================
@@ -40,8 +41,7 @@ async function startBot() {
             creds: state.creds,
             keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'fatal' }))
         },
-        printQRInTerminal: true,
-        logger: pino({ level: 'fatal' }),
+        logger: pino({ level: 'fatal' }), // Removed printQRInTerminal
         browser: ['VOID-MD', 'Chrome', '1.0.0'],
         markOnlineOnConnect: config.autonline,
         generateHighQualityLinkPreview: true
@@ -49,7 +49,13 @@ async function startBot() {
 
     sock.ev.on('creds.update', saveCreds)
 
-    sock.ev.on('connection.update', ({ connection, lastDisconnect }) => {
+    // ✅ QR CODE FIX HERE
+    sock.ev.on('connection.update', ({ connection, lastDisconnect, qr }) => {
+        if (qr) {
+            console.log('SCAN THIS QR CODE:')
+            qrcode.generate(qr, { small: true })
+        }
+
         if (connection === 'close') {
             const shouldReconnect = (lastDisconnect?.error instanceof Boom)?.output?.statusCode!== DisconnectReason.loggedOut
             if (shouldReconnect) startBot()
