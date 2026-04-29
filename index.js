@@ -130,7 +130,6 @@ async function startBot() {
                 body,
                 PREFIX,
                 BOT_NAME,
-                OWNER_NAME,
                 OWNER_NUMBER,
                 BOT_IMAGE,
                 VERSION,
@@ -161,10 +160,13 @@ async function startBot() {
                 await sock.sendMessage(id, {
                     image: { url: BOT_IMAGE },
                     caption: `👋 *WELCOME* @${user.split('@')[0]}\n\nWelcome to *${groupMetadata.subject}*\n\n📝 Read group description\n✅ Follow rules\n💬 Enjoy!`,
-                    mentions: // ✅ Fixed: was empty before
+                    mentions: [user]
                 })
             } else if (action === 'remove') {
-                await sock.sendMessage(id, { text: `👋 Goodbye @${user.split('@')[0]}`, mentions: }) // ✅ Fixed
+                await sock.sendMessage(id, {
+                    text: `👋 Goodbye @${user.split('@')[0]}`,
+                    mentions: [user]
+                })
             }
         }
     })
