@@ -4,10 +4,9 @@ const path = require('path')
 module.exports = {
     name: 'welcome',
     desc: 'Toggle welcome messages on/off',
-    execute: async ({ sock, m, from, isGroup, isOwner, args, PREFIX, reply }) => {
+    execute: async ({ sock, m, from, isGroup, args, PREFIX, reply }) => {
         await sock.sendMessage(from, { react: { text: '👋', key: m.key } })
         if (!isGroup) return reply('Group only')
-        if (!isOwner) return reply('Owner only')
 
         const configPath = path.join(__dirname, '../config.json')
         let config = JSON.parse(fs.readFileSync(configPath))
