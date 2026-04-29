@@ -4,17 +4,18 @@ const pino = require('pino')
 const express = require('express')
 const qrcode = require('qrcode')
 const fs = require('fs')
+const axios = require('axios')
 
 const app = express()
 const PORT = process.env.PORT || 3000
 
 // === CONFIG ===
 const BOT_NAME = 'VOID-MD'
-const OWNER_NAME = 'Mr Void' // Your name set
-const OWNER_NUMBER = '254112843071' // Your number
+const OWNER_NAME = 'Mr Void'
+const OWNER_NUMBER = '254112843071'
 const BOT_IMAGE = 'https://telegra.ph/file/24fa902ead26340f3df2c.png'
 const VERSION = 'v1.0.0'
-const PREFIX = '.' // Command prefix
+const PREFIX = '.'
 // =============================
 
 const startTime = Date.now()
@@ -55,11 +56,12 @@ async function connectBot() {
 
     sock.ev.on('messages.upsert', async ({ messages }) => {
         const m = messages[0]
-        if (!m.message || m.key.fromMe) return
+        if (!m.message) return // Removed key.fromMe check so bot can respond to itself
 
         const from = m.key.remoteJid
         const sender = m.key.participant || m.key.remoteJid
-        const body = m.message.conversation || m.message.extendedTextMessage?.text || m.message.imageMessage?.caption || ''
+        const body = m.message.conversation || m.message.extendedTextMessage?.text || m.message.imageMessage?.caption || m.message.videoMessage?.caption || ''
+        const quoted = m.message.extendedTextMessage?.contextInfo?.quotedMessage
 
         if (!body.startsWith(PREFIX)) return
 
@@ -80,7 +82,7 @@ async function connectBot() {
 
         const reply = async (text) => await sock.sendMessage(from, { text }, { quoted: m })
 
-        // ===== COMMANDS =====
+        // ===== COMMANDS - EVERYONE INCLUDING BOT NUMBER =====
 
         if (cmd === 'menu' || cmd === 'help') {
             const menu = `
@@ -102,6 +104,11 @@ ${PREFIX}runtime - Bot uptime
 *FUN COMMANDS*
 ${PREFIX}say <text> - Bot repeats text
 ${PREFIX}joke - Random joke
+
+*MEDIA COMMANDS*
+${PREFIX}sticker - Image/Video to sticker
+${PREFIX}play <song> - Download song
+${PREFIX}tiktokdl <link> - Download TikTok
 
 *GROUP COMMANDS*
 ${PREFIX}tagall - Tag everyone
@@ -142,6 +149,51 @@ _Powered by VOID-MD_`
                 "What's a programmer's favorite hangout place? Foo Bar."
             ]
             await reply(jokes[Math.floor(Math.random() * jokes.length)])
+        }
+
+        else if (cmd === 'sticker' || cmd === 's') {
+            const mediaMessage = m.message.imageMessage || m.message.videoMessage || quoted?.imageMessage || quoted?.videoMessage
+            if (!mediaMessage) return reply(`Reply to an image/video with ${PREFIX}sticker`)
+
+            try {
+                await reply('Creating sticker...')
+                const buffer = await sock.downloadMediaMessage(m.message.imageMessage || m.message.videoMessage? m : { key: m.key, message: quoted })
+                await sock.sendMessage(from, { sticker: buffer }, { quoted: m })
+            } catch (e) {
+                reply('Failed to create sticker. Try smaller image/video.')
+            }
+        }
+
+        else if (cmd === 'play' || cmd === 'song') {
+            const query = args.join(' ')
+            if (!query) return reply(`Usage: ${PREFIX}play Alan Walker Faded`)
+
+            try {
+                await reply(`Searching: ${query}...`)
+                const res = await axios.get(`https://api.akuari.my.id/downloader/ytplay?query=${encodeURIComponent(query)}`)
+                const data = res.data.respon
+                await sock.sendMessage(from, {
+                    audio: { url: data.urlmp3 },
+                    mimetype: 'audio/mpeg',
+                    fileName: `${data.title}.mp3`
+                }, { quoted: m })
+            } catch (e) {
+                reply('Failed to download. Try different song name.')
+            }
+        }
+
+        else if (cmd === 'tiktokdl' || cmd === 'tt') {
+            const url = args[0]
+            if (!url ||!url.includes('tiktok')) return reply(`Usage: ${PREFIX}tiktokdl <tiktok link>`)
+
+            try {
+                await reply('Downloading TikTok...')
+                const res = await axios.get(`https://api.akuari.my.id/downloader/tiktok?link=${url}`)
+                const video = res.data.respon.video
+                await sock.sendMessage(from, { video: { url: video }, caption: 'Done by VOID-MD' }, { quoted: m })
+            } catch (e) {
+                reply('Failed to download. Link might be private or invalid.')
+            }
         }
 
         else if (cmd === 'tagall' || cmd === 'everyone') {
