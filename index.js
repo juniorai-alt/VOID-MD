@@ -1,322 +1,196 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys')
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, jidNormalizedUser } = require('@whiskeysockets/baileys')
 const { Boom } = require('@hapi/boom')
-const pino = require('pino')
-const express = require('express')
-const qrcode = require('qrcode')
 const fs = require('fs')
 const path = require('path')
-
+const pino = require('pino')
+const express = require('express')
 const app = express()
-const PORT = process.env.PORT || 3000
 
 // === CONFIG ===
 const BOT_NAME = 'VOID-MD'
 const OWNER_NAME = 'Mr Void'
-const OWNER_NUMBER = '254112843071'
-const BOT_IMAGE = 'https://telegra.ph/file/24fa902ead26340f3df2c.png'
+const OWNER_NUMBER = '254112843071' // 👈 Change to your number
+const BOT_IMAGE = 'https://files.catbox.moe/bhiw6e.png' // ✅ Updated with your link
 const VERSION = 'v1.2.0'
 const PREFIX = '.'
 // =============================
 
 const startTime = Date.now()
-let qrCode = null
-let botConnected = false
-let commands = new Map()
+let config = JSON.parse(fs.readFileSync('./config.json'))
 
-// === CONFIG FILE FOR TOGGLES ===
-const configPath = path.join(__dirname, 'config.json')
-let botConfig = {
-    welcome: false,
-    antilink: false,
-    autoread: true,
-    antidelete: false,
-    chatbot: false,
-    autoview: false,
-    autotyping: false,
-    autorecording: false,
-    autonline: false,
-    statusEmojis: ['🔥', '❤️', '😂', '😮', '💯', '💀', '👑', '✨']
-}
-
-function loadConfig() {
-    if (fs.existsSync(configPath)) {
-        botConfig = {...botConfig,...JSON.parse(fs.readFileSync(configPath)) }
-    } else {
-        fs.writeFileSync(configPath, JSON.stringify(botConfig, null, 2))
+// Command loader
+const commands = new Map()
+const cmdDir = path.join(__dirname, 'commands')
+fs.readdirSync(cmdDir).forEach(file => {
+    if (file.endsWith('.js')) {
+        const cmd = require(path.join(cmdDir, file))
+        commands.set(cmd.name, cmd)
+        if (cmd.alias) cmd.alias.forEach(a => commands.set(a, cmd))
     }
-}
-function saveConfig() {
-    fs.writeFileSync(configPath, JSON.stringify(botConfig, null, 2))
-}
-// ===============================
+})
+console.log(`Loaded ${commands.size} commands`)
 
-// === ANTI DELETE STORE ===
-let msgStore = new Map()
-// =========================
-
-// Auto-load commands from /commands folder
-function loadCommands() {
-    const commandsPath = path.join(__dirname, 'commands')
-    if (!fs.existsSync(commandsPath)) fs.mkdirSync(commandsPath)
-
-    const files = fs.readdirSync(commandsPath).filter(f => f.endsWith('.js'))
-    commands.clear()
-
-    for (const file of files) {
-        delete require.cache[require.resolve(`./commands/${file}`)]
-        const command = require(`./commands/${file}`)
-        commands.set(command.name, command)
-        if (command.alias) command.alias.forEach(a => commands.set(a, command))
-    }
-    console.log(`Loaded ${files.length} commands`)
-}
-
-async function connectBot() {
-    loadCommands()
-    loadConfig()
-    const { state, saveCreds } = await useMultiFileAuthState('auth_info')
+async function startBot() {
+    const { state, saveCreds } = await useMultiFileAuthState('auth')
     const { version } = await fetchLatestBaileysVersion()
 
     const sock = makeWASocket({
         version,
-        logger: pino({ level: 'silent' }),
-        printQRInTerminal: false,
-        auth: state,
-        browser: ['VOID-MD', 'Chrome', '1.0.0']
-    })
-
-    sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect, qr } = update
-        if(qr) {
-            qrCode = qr
-            botConnected = false
-            console.log('QR Generated')
-        }
-        if(connection === 'close') {
-            botConnected = false
-            const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode!== DisconnectReason.loggedOut
-            if(shouldReconnect) setTimeout(connectBot, 5000)
-        } else if(connection === 'open') {
-            console.log('✅ VOID-MD Connected!')
-            botConnected = true
-            qrCode = null
-
-            // === AUTO ONLINE LOOP ===
-            setInterval(async () => {
-                if (botConfig.autonline && botConnected) {
-                    try {
-                        await sock.sendPresenceUpdate('available')
-                    } catch (e) {}
-                }
-            }, 10000) // Updates every 10 seconds
-            // ========================
-        }
+        auth: {
+            creds: state.creds,
+            keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'fatal' }))
+        },
+        printQRInTerminal: true,
+        logger: pino({ level: 'fatal' }),
+        browser: ['VOID-MD', 'Chrome', '1.0.0'],
+        markOnlineOnConnect: config.autonline,
+        generateHighQualityLinkPreview: true
     })
 
     sock.ev.on('creds.update', saveCreds)
 
-    // === WELCOME & GOODBYE ===
-    sock.ev.on('group-participants.update', async (update) => {
-        if (!botConfig.welcome) return
-        try {
-            const { id, participants, action } = update
-            const groupMetadata = await sock.groupMetadata(id)
-
-            for (let user of participants) {
-                let pfp
-                try {
-                    pfp = await sock.profilePictureUrl(user, 'image')
-                } catch {
-                    pfp = 'https://telegra.ph/file/24fa902ead26340f3df2c.png'
-                }
-
-                if (action === 'add') {
-                    const text = `*WELCOME TO ${groupMetadata.subject}*\n\n@${user.split('@')[0]}\n\n📜 Read group description\n⚠️ Follow the rules\n🎉 Enjoy your stay\n\n_Powered by VOID-MD_`
-                    await sock.sendMessage(id, {
-                        image: { url: pfp },
-                        caption: text,
-                        mentions: [user]
-                    })
-                } else if (action === 'remove') {
-                    const text = `*GOODBYE*\n\n@${user.split('@')[0]} left ${groupMetadata.subject}\n\n_Powered by VOID-MD_`
-                    await sock.sendMessage(id, { text, mentions: [user] })
-                }
-            }
-        } catch (e) {
-            console.log('Welcome error:', e.message)
+    sock.ev.on('connection.update', ({ connection, lastDisconnect }) => {
+        if (connection === 'close') {
+            const shouldReconnect = (lastDisconnect?.error instanceof Boom)?.output?.statusCode!== DisconnectReason.loggedOut
+            if (shouldReconnect) startBot()
+        } else if (connection === 'open') {
+            console.log(`✅ ${BOT_NAME} Connected!`)
         }
     })
 
-    // === ANTI DELETE LISTENER ===
-    sock.ev.on('messages.update', async (updates) => {
-        if (!botConfig.antidelete) return
-        for (const { key, update } of updates) {
-            if (update.messageStubType === 0) continue
-            if (update.message === null) {
-                const stored = msgStore.get(`${key.remoteJid}_${key.id}`)
-                if (!stored?.message) return
-
-                const sender = stored.key.participant || stored.key.remoteJid
-                const content = stored.message.conversation ||
-                               stored.message.extendedTextMessage?.text ||
-                               stored.message.imageMessage?.caption ||
-                               stored.message.videoMessage?.caption ||
-                               '*Media deleted*'
-
-                await sock.sendMessage(key.remoteJid, {
-                    text: `*ANTI DELETE*\n\n@${sender.split('@')[0]} deleted:\n\n${content}`,
-                    mentions: [sender]
-                })
-
-                if (stored.message.imageMessage) {
-                    const buffer = await sock.downloadMediaMessage(stored)
-                    await sock.sendMessage(key.remoteJid, { image: buffer, caption: 'Deleted image recovered' })
-                } else if (stored.message.videoMessage) {
-                    const buffer = await sock.downloadMediaMessage(stored)
-                    await sock.sendMessage(key.remoteJid, { video: buffer, caption: 'Deleted video recovered' })
-                } else if (stored.message.stickerMessage) {
-                    const buffer = await sock.downloadMediaMessage(stored)
-                    await sock.sendMessage(key.remoteJid, { sticker: buffer })
-                }
-            }
+    // Auto features
+    sock.ev.on('presence.update', async ({ id, presences }) => {
+        if (config.autonline) {
+            await sock.sendPresenceUpdate('available')
         }
     })
 
-    // === MAIN MESSAGE HANDLER - ALL HOOKS MERGED ===
-    sock.ev.on('messages.upsert', async ({ messages }) => {
+    sock.ev.on('messages.upsert', async ({ messages, type }) => {
+        if (type!== 'notify') return
         const m = messages[0]
-        if (!m.message) return
+        if (!m.message || m.key.fromMe) return
 
         const from = m.key.remoteJid
+        const isGroup = from.endsWith('@g.us')
         const sender = m.key.participant || m.key.remoteJid
-
-        // === STATUS HANDLER ===
-        if (from === 'status@broadcast') {
-            if (botConfig.autoview) {
-                try {
-                    await sock.readMessages([m.key])
-                } catch (e) {}
-            }
-            return
-        }
-        // ======================
-
-        // === ANTI DELETE CACHE ===
-        if (!m.key.fromMe) {
-            msgStore.set(`${from}_${m.key.id}`, m)
-            if (msgStore.size > 500) msgStore.delete(msgStore.keys().next().value)
-        }
-        // =========================
-
-        const body = m.message.conversation || m.message.extendedTextMessage?.text || m.message.imageMessage?.caption || m.message.videoMessage?.caption || ''
-
-        // === ANTILINK ===
-        if (botConfig.antilink && from.endsWith('@g.us') &&!body.startsWith(PREFIX)) {
-            const linkRegex = /chat\.whatsapp\.com\/[A-Za-z0-9]{20,}/
-            if (linkRegex.test(body)) {
-                try {
-                    const groupMetadata = await sock.groupMetadata(from)
-                    const isBotAdmin = groupMetadata.participants.find(p => p.id === sock.user.id)?.admin
-                    const isAdmin = groupMetadata.participants.find(p => p.id === sender)?.admin
-                    if (isBotAdmin &&!isAdmin) {
-                        await sock.sendMessage(from, { delete: m.key })
-                        await sock.sendMessage(from, {
-                            text: `⚠️ @${sender.split('@')[0]} Group links are not allowed!`,
-                            mentions: [sender]
-                        })
-                        await sock.groupParticipantsUpdate(from, [sender], 'remove')
-                        return
-                    }
-                } catch (e) {}
-            }
-        }
-        // ================
-
-        // === AUTO READ ===
-        if (botConfig.autoread) {
-            try {
-                await sock.readMessages([m.key])
-            } catch (e) {}
-        }
-        // =================
-
-        // === AUTO TYPING / RECORDING ===
-        if ((botConfig.autotyping || botConfig.autorecording) && body.startsWith(PREFIX) &&!botConfig.autonline) {
-            try {
-                if (botConfig.autorecording) {
-                    await sock.sendPresenceUpdate('recording', from)
-                } else if (botConfig.autotyping) {
-                    await sock.sendPresenceUpdate('composing', from)
-                }
-
-                setTimeout(async () => {
-                    await sock.sendPresenceUpdate('paused', from)
-                }, 5000)
-            } catch (e) {}
-        }
-        // ===============================
-
-        // === CHATBOT ===
-        if (botConfig.chatbot &&!m.key.fromMe &&!body.startsWith(PREFIX)) {
-            const mentioned = m.message.extendedTextMessage?.contextInfo?.mentionedJid || []
-            const quotedSender = m.message.extendedTextMessage?.contextInfo?.participant
-            if (mentioned.includes(sock.user.id) || quotedSender === sock.user.id) {
-                const responses = ["I'm here Mr Void 🤖", "What's up?", "Say that again?", "Bet", "Void here, speak", "I'm listening...", "You called?", "Sup"]
-                const replyText = responses[Math.floor(Math.random() * responses.length)]
-                await sock.sendMessage(from, { text: replyText }, { quoted: m })
-                return
-            }
-        }
-        // ===============
-
-        // === COMMAND HANDLER ===
-        if (!body.startsWith(PREFIX)) return
-
-        const args = body.slice(PREFIX.length).trim().split(' ')
-        const cmdName = args.shift().toLowerCase()
+        const body = m.message.conversation || m.message.extendedTextMessage?.text || ''
+        const isOwner = sender.split('@')[0] === OWNER_NUMBER
+        const args = body.trim().split(/ +/).slice(1)
+        const cmdName = body.trim().split(/ +/)[0].toLowerCase().slice(PREFIX.length)
         const cmd = commands.get(cmdName)
 
-        if (!cmd) return
+        // Auto read
+        if (config.autoread) await sock.readMessages([m.key])
 
-        const extra = {
-            sock, m, from, sender, args,
-            quoted: m.message.extendedTextMessage?.contextInfo?.quotedMessage,
-            mentioned: m.message.extendedTextMessage?.contextInfo?.mentionedJid || [],
-            isGroup: from.endsWith('@g.us'),
-            isOwner: sender.split('@')[0] === OWNER_NUMBER,
-            PREFIX, BOT_NAME, OWNER_NAME, OWNER_NUMBER, VERSION, BOT_IMAGE,
-            timeEAT: new Date().toLocaleString('en-KE', { timeZone: 'Africa/Nairobi' }),
-            uptime: () => {
-                let s = Math.floor((Date.now() - startTime) / 1000)
-                let h = Math.floor(s / 3600), min = Math.floor(s % 3600 / 60)
-                s = Math.floor(s % 60)
-                return `${h}h ${min}m ${s}s`
-            },
-            reply: async (text) => await sock.sendMessage(from, { text }, { quoted: m }),
-            commands
+        // Auto view status
+        if (config.autoview && from === 'status@broadcast') {
+            await sock.readMessages([m.key])
         }
 
+        // Auto typing/recording
+        if (cmd && config.autotyping &&!config.autonline) {
+            await sock.sendPresenceUpdate('composing', from)
+        } else if (cmd && config.autorecording &&!config.autonline) {
+            await sock.sendPresenceUpdate('recording', from)
+        }
+
+        // Antilink
+        if (isGroup && config.antilink && body.match(/chat\.whatsapp\.com\/[a-zA-Z0-9]/)) {
+            const groupMetadata = await sock.groupMetadata(from)
+            const isAdmin = groupMetadata.participants.find(p => p.id === sender)?.admin!== null
+            const botAdmin = groupMetadata.participants.find(p => p.id === sock.user.id)?.admin!== null
+            if (!isAdmin && botAdmin) {
+                await sock.sendMessage(from, { delete: m.key })
+                await sock.groupParticipantsUpdate(from, [sender], 'remove')
+                await sock.sendMessage(from, { text: `⚠️ @${sender.split('@')[0]} removed for sending group link`, mentions: [sender] })
+            }
+        }
+
+        // Chatbot
+        if (config.chatbot && body.toLowerCase().includes(BOT_NAME.toLowerCase()) &&!cmd) {
+            await sock.sendMessage(from, { text: `Yo! You called ${BOT_NAME}? Type ${PREFIX}menu for commands 💀` }, { quoted: m })
+        }
+
+        // Command handler
+        if (!body.startsWith(PREFIX)) return
+        if (!cmd) return
+
+        const reply = (text) => sock.sendMessage(from, { text }, { quoted: m })
+
         try {
-            await cmd.execute(extra)
+            await cmd.execute({
+                sock,
+                m,
+                from,
+                sender,
+                isGroup,
+                isOwner,
+                args,
+                body,
+                PREFIX,
+                BOT_NAME,
+                OWNER_NAME,
+                OWNER_NUMBER,
+                BOT_IMAGE,
+                VERSION,
+                uptime: () => {
+                    let s = Math.floor((Date.now() - startTime) / 1000)
+                    let h = Math.floor(s / 3600), min = Math.floor(s % 3600 / 60)
+                    s = Math.floor(s % 60)
+                    return `${h}h ${min}m ${s}s`
+                },
+                reply,
+                mentioned: m.message.extendedTextMessage?.contextInfo?.mentionedJid || [],
+                quoted: m.message.extendedTextMessage?.contextInfo?.quotedMessage? {
+                    sender: m.message.extendedTextMessage.contextInfo.participant,
+                    message: m.message.extendedTextMessage.contextInfo.quotedMessage
+                } : null
+            })
         } catch (e) {
             console.error(e)
-            await sock.sendMessage(from, { text: 'Error running command' }, { quoted: m })
+            reply(`❌ Error: ${e.message}`)
+        }
+    })
+
+    // Welcome/Goodbye
+    sock.ev.on('group-participants.update', async ({ id, participants, action }) => {
+        if (!config.welcome) return
+        const groupMetadata = await sock.groupMetadata(id)
+        for (let user of participants) {
+            if (action === 'add') {
+                await sock.sendMessage(id, {
+                    image: { url: BOT_IMAGE },
+                    caption: `👋 *WELCOME* @${user.split('@')[0]}\n\nWelcome to *${groupMetadata.subject}*\n\n📝 Read group description\n✅ Follow rules\n💬 Enjoy!`,
+                    mentions: [user]
+                })
+            } else if (action === 'remove') {
+                await sock.sendMessage(id, { text: `👋 Goodbye @${user.split('@')[0]}`, mentions: [user] })
+            }
+        }
+    })
+
+    // Anti delete
+    sock.ev.on('messages.update', async (updates) => {
+        if (!config.antidelete) return
+        for (const { key, update } of updates) {
+            if (update.messageStubType === 68) {
+                try {
+                    const msg = await sock.loadMessage(key.remoteJid, key.id)
+                    if (!msg || key.fromMe) return
+                    const sender = key.participant || key.remoteJid
+                    const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || 'Media message'
+                    await sock.sendMessage(key.remoteJid, {
+                        text: `🗑️ *ANTI DELETE*\n\n👤 @${sender.split('@')[0]} deleted:\n\n${text}`,
+                        mentions: [sender]
+                    })
+                } catch {}
+            }
         }
     })
 }
 
-app.get('/', async (req, res) => {
-    if (botConnected) {
-        res.send('<h1>✅ VOID-MD is online!</h1><p>Send.menu to your bot number</p>')
-    } else if (qrCode) {
-        const qrImage = await qrcode.toDataURL(qrCode)
-        res.send(`<h1>Scan QR to Connect VOID-MD</h1><p>WhatsApp → Linked Devices → Link Device</p><img src="${qrImage}"><script>setTimeout(() => location.reload(), 20000)</script>`)
-    } else {
-        res.send('<h1>Starting VOID-MD...</h1><p>Refresh in 15 seconds</p><script>setTimeout(() => location.reload(), 15000)</script>')
-    }
-})
+startBot()
 
-app.listen(PORT, () => {
-    console.log(`VOID-MD Server running on port ${PORT}`)
-    connectBot()
-})
+// Keep alive for Render
+app.get('/', (req, res) => res.send(`${BOT_NAME} Running!`))
+app.listen(process.env.PORT || 10000, () => console.log('VOID-MD Server running on port 10000'))
