@@ -10,7 +10,7 @@ const app = express()
 // === CONFIG ===
 const BOT_NAME = 'VOID-MD'
 const OWNER_NAME = 'Mr Void'
-const OWNER_NUMBER = '254112843071'
+let OWNER_NUMBER = '254112843071' // Will be overwritten by bot number
 const BOT_IMAGE = 'https://files.catbox.moe/bhiw6e.png'
 const VERSION = 'v1.2.0'
 const PREFIX = '.'
@@ -20,6 +20,7 @@ const startTime = Date.now()
 let config = JSON.parse(fs.readFileSync('./config.json'))
 let qrCodeData = null
 let isConnected = false
+let BOT_NUMBER = null // Store the bot's number
 
 // Command loader
 const commands = new Map()
@@ -64,11 +65,17 @@ async function startBot() {
             isConnected = false
             qrCodeData = null
             const shouldReconnect = (lastDisconnect?.error instanceof Boom)?.output?.statusCode!== DisconnectReason.loggedOut
+            console.log('Connection closed. Reconnecting:', shouldReconnect)
             if (shouldReconnect) startBot()
         } else if (connection === 'open') {
             isConnected = true
             qrCodeData = null
+            // ✅ AUTO-DETECT BOT NUMBER
+            BOT_NUMBER = sock.user.id.split(':')[0]
+            OWNER_NUMBER = BOT_NUMBER // Make scanned number the owner
             console.log(`✅ ${BOT_NAME} Connected!`)
+            console.log(`Bot Number: ${BOT_NUMBER}`)
+            console.log(`Owner set to: ${OWNER_NUMBER}`)
         }
     })
 
@@ -77,17 +84,42 @@ async function startBot() {
         const m = messages[0]
         if (!m.message || m.key.fromMe) return
 
+        // Reload config every message so toggles work instantly
+        try {
+            config = JSON.parse(fs.readFileSync('./config.json'))
+        } catch (e) {
+            console.log('Config reload error:', e.message)
+        }
+
         const from = m.key.remoteJid
         const isGroup = from.endsWith('@g.us')
         const sender = m.key.participant || m.key.remoteJid
-        const body = m.message.conversation || m.message.extendedTextMessage?.text || ''
-        const isOwner = sender.split('@')[0] === OWNER_NUMBER
+        const body = m.message.conversation || m.message.extendedTextMessage?.text || m.message.imageMessage?.caption || m.message.videoMessage?.caption || ''
+
+        // ✅ Owner is now the bot number that scanned QR
+        const isOwner = sender.split('@')[0] === OWNER_NUMBER || sender.split('@')[0] === BOT_NUMBER
+        const isBot = sender.split('@')[0] === BOT_NUMBER
+
         const args = body.trim().split(/ +/).slice(1)
         const cmdName = body.trim().split(/ +/)[0].toLowerCase().slice(PREFIX.length)
         const cmd = commands.get(cmdName)
 
-        if (config.autoread) await sock.readMessages([m.key])
-        if (config.autoview && from === 'status@broadcast') await sock.readMessages([m.key])
+        // AUTO VIEW STATUS
+        if (config.autoview && from === 'status@broadcast') {
+            try {
+                await sock.readMessages([m.key])
+                console.log(`Viewed status from ${sender.split('@')[0]}`)
+            } catch (e) {
+                console.log('Status view error:', e.message)
+            }
+            return
+        }
+
+        if (config.autoread) {
+            try {
+                await sock.readMessages([m.key])
+            } catch (e) {}
+        }
 
         if (cmd && config.autotyping &&!config.autonline) {
             await sock.sendPresenceUpdate('composing', from)
@@ -100,10 +132,15 @@ async function startBot() {
 
         const reply = (text) => sock.sendMessage(from, { text }, { quoted: m })
 
+        // Save config function for toggle commands
+        const saveConfig = () => {
+            fs.writeFileSync('./config.json', JSON.stringify(config, null, 2))
+        }
+
         try {
             await cmd.execute({
-                sock, m, from, sender, isGroup, isOwner, args, body,
-                PREFIX, BOT_NAME, OWNER_NAME, OWNER_NUMBER, BOT_IMAGE, VERSION, commands,
+                sock, m, from, sender, isGroup, isOwner, isBot, args, body,
+                PREFIX, BOT_NAME, OWNER_NAME, OWNER_NUMBER, BOT_NUMBER, BOT_IMAGE, VERSION, commands, config, saveConfig,
                 uptime: () => {
                     let s = Math.floor((Date.now() - startTime) / 1000)
                     let h = Math.floor(s / 3600), min = Math.floor(s % 3600 / 60)
@@ -133,7 +170,8 @@ app.get('/', (req, res) => {
                 <head><title>${BOT_NAME}</title></head>
                 <body style="background:#000;color:#0f0;text-align:center;padding:50px;font-family:monospace">
                     <h1>✅ ${BOT_NAME} Running!</h1>
-                    <p>Bot is connected to WhatsApp</p>
+                    <p>Bot Number: ${BOT_NUMBER}</p>
+                    <p>Owner: ${OWNER_NUMBER}</p>
                     <img src="${BOT_IMAGE}" width="200" style="border-radius:20px;margin-top:20px">
                 </body>
             </html>
