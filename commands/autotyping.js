@@ -1,28 +1,23 @@
-const fs = require('fs')
-const path = require('path')
-
 module.exports = {
     name: 'autotyping',
-    alias: ['typing'],
-    desc: 'Show typing indicator when processing commands',
-    execute: async ({ sock, m, from, args, PREFIX, reply }) => {
-        await sock.sendMessage(from, { react: { text: '⌨️', key: m.key } })
-
-        const configPath = path.join(__dirname, '../config.json')
-        let config = JSON.parse(fs.readFileSync(configPath))
+    alias: ['at'],
+    desc: 'Toggle typing on all messages',
+    category: 'owner',
+    async execute({ reply, args, isOwner, config, saveConfig }) {
+        if (!isOwner) return reply('*Owner only* 💀')
 
         if (args[0] === 'on') {
             config.autotyping = true
             config.autorecording = false
-            fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
-            await reply('✅ *Auto Typing ON*\nBot shows "typing..." when running commands')
+            config.autonline = false
+            saveConfig()
+            reply('*Autotyping ON* 💀\nBot shows typing for 3sec on every message')
         } else if (args[0] === 'off') {
             config.autotyping = false
-            fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
-            await reply('❌ *Auto Typing OFF*')
+            saveConfig()
+            reply('*Autotyping OFF* 💀')
         } else {
-            const status = config.autotyping? 'ON ✅' : 'OFF ❌'
-            await reply(`*AUTO TYPING STATUS:* ${status}\n\nUsage: ${PREFIX}autotyping on/off`)
+            reply(`*Autotyping Status:* ${config.autotyping? 'ON ✅' : 'OFF ❌'}\n\nUse:.autotyping on/off`)
         }
     }
 }
