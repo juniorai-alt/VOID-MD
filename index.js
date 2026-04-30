@@ -1,88 +1,95 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, makeCacheableSignalKeyStore } = require('@whiskeysockets/baileys')
+const { default: makeWASocket, DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys')
 const { Boom } = require('@hapi/boom')
 const fs = require('fs')
 const path = require('path')
 const pino = require('pino')
-const express = require('express')
-const qrcode = require('qrcode')
-const app = express()
+const os = require('os')
 
-// === CONFIG ===
+// CONFIG
+const PREFIX = '.'
 const BOT_NAME = 'VOID-MD'
 const OWNER_NAME = 'Mr Void'
-let OWNER_NUMBER = '254112843071' // Will be overwritten by bot number
-const BOT_IMAGE = 'https://files.catbox.moe/bhiw6e.png'
+const OWNER_NUMBER = '254112843071' // Your main number without +
+const BOT_NUMBER = '254738440805' // Bot number that scanned QR
+const BOT_IMAGE = 'https://i.ibb.co/6Z2QZQz/void.jpg'
 const VERSION = 'v1.2.0'
-const PREFIX = '.'
-// =============================
 
-const startTime = Date.now()
 let config = JSON.parse(fs.readFileSync('./config.json'))
-let qrCodeData = null
-let isConnected = false
-let BOT_NUMBER = null // Store the bot's number
+const startTime = Date.now()
+const msgStore = new Map()
 
-// Command loader
+// LOAD COMMANDS
 const commands = new Map()
-const cmdDir = path.join(__dirname, 'commands')
-
-if (fs.existsSync(cmdDir)) {
-    fs.readdirSync(cmdDir).forEach(file => {
-        if (file.endsWith('.js')) {
-            const cmd = require(path.join(cmdDir, file))
-            commands.set(cmd.name, cmd)
-            if (cmd.alias) cmd.alias.forEach(a => commands.set(a, cmd))
+const commandsPath = path.join(__dirname, 'commands')
+fs.readdirSync(commandsPath).forEach(file => {
+    if (file.endsWith('.js')) {
+        const command = require(path.join(commandsPath, file))
+        commands.set(command.name, command)
+        if (command.alias) {
+            command.alias.forEach(alias => commands.set(alias, command))
         }
-    })
-}
+    }
+})
 console.log(`Loaded ${commands.size} commands`)
 
 async function startBot() {
-    const { state, saveCreds } = await useMultiFileAuthState('auth')
+    const { state, saveCreds } = await useMultiFileAuthState('session')
     const { version } = await fetchLatestBaileysVersion()
 
     const sock = makeWASocket({
         version,
-        auth: {
-            creds: state.creds,
-            keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'fatal' }))
-        },
-        logger: pino({ level: 'fatal' }),
-        browser: ['VOID-MD', 'Chrome', '1.0.0'],
-        markOnlineOnConnect: config.autonline,
-        generateHighQualityLinkPreview: true
+        auth: state,
+        printQRInTerminal: true,
+        logger: pino({ level: 'silent' }),
+        browser: ['VOID-MD', 'Chrome', '1.0.0']
+    })
+
+    // AUTO ONLINE
+    if (config.autonline) {
+        setInterval(() => {
+            sock.sendPresenceUpdate('available')
+        }, 10000)
+    }
+
+    sock.ev.on('connection.update', async (update) => {
+        const { connection, lastDisconnect } = update
+        if (connection === 'close') {
+            const shouldReconnect = (lastDisconnect.error)?.output?.statusCode!== DisconnectReason.loggedOut
+            if (shouldReconnect) {
+                startBot()
+            }
+        } else if (connection === 'open') {
+            console.log('✅ Bot connected')
+            await sock.sendMessage(OWNER_NUMBER + '@s.whatsapp.net', {
+                text: `*${BOT_NAME} ${VERSION}* is online 💀\n\n*Prefix:* ${PREFIX}\n*Commands:* ${commands.size}`
+            })
+        }
     })
 
     sock.ev.on('creds.update', saveCreds)
 
-    sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
-        if (qr) {
-            qrCodeData = await qrcode.toDataURL(qr)
-            console.log('QR generated - visit your Render URL to scan')
-        }
-
-        if (connection === 'close') {
-            isConnected = false
-            qrCodeData = null
-            const shouldReconnect = (lastDisconnect?.error instanceof Boom)?.output?.statusCode!== DisconnectReason.loggedOut
-            console.log('Connection closed. Reconnecting:', shouldReconnect)
-            if (shouldReconnect) startBot()
-        } else if (connection === 'open') {
-            isConnected = true
-            qrCodeData = null
-            // ✅ AUTO-DETECT BOT NUMBER
-            BOT_NUMBER = sock.user.id.split(':')[0]
-            OWNER_NUMBER = BOT_NUMBER // Make scanned number the owner
-            console.log(`✅ ${BOT_NAME} Connected!`)
-            console.log(`Bot Number: ${BOT_NUMBER}`)
-            console.log(`Owner set to: ${OWNER_NUMBER}`)
-        }
-    })
-
+    // ANTI DELETE - Store messages
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
         if (type!== 'notify') return
         const m = messages[0]
-        if (!m.message || m.key.fromMe) return
+        if (!m.message) return
+
+        // Store messages for antidelete
+        if (!m.key.fromMe && config.antidelete) {
+            msgStore.set(m.key.id, {
+                sender: m.key.participant || m.key.remoteJid,
+                from: m.key.remoteJid,
+                message: m.message,
+                timestamp: Date.now()
+            })
+            // Keep only last 100 msgs to save RAM
+            if (msgStore.size > 100) {
+                const firstKey = msgStore.keys().next().value
+                msgStore.delete(firstKey)
+            }
+        }
+
+        if (m.key.fromMe) return
 
         // Reload config every message so toggles work instantly
         try {
@@ -96,7 +103,7 @@ async function startBot() {
         const sender = m.key.participant || m.key.remoteJid
         const body = m.message.conversation || m.message.extendedTextMessage?.text || m.message.imageMessage?.caption || m.message.videoMessage?.caption || ''
 
-        // ✅ Owner is now the bot number that scanned QR
+        // Owner check - BOT_NUMBER has full control
         const isOwner = sender.split('@')[0] === OWNER_NUMBER || sender.split('@')[0] === BOT_NUMBER
         const isBot = sender.split('@')[0] === BOT_NUMBER
 
@@ -104,27 +111,74 @@ async function startBot() {
         const cmdName = body.trim().split(/ +/)[0].toLowerCase().slice(PREFIX.length)
         const cmd = commands.get(cmdName)
 
-        // AUTO VIEW STATUS
+        // AUTO VIEW + REACT STATUS
         if (config.autoview && from === 'status@broadcast') {
             try {
                 await sock.readMessages([m.key])
-                console.log(`Viewed status from ${sender.split('@')[0]}`)
+                
+                // Auto react with random emoji
+                const emojis = ['❤️', '😂', '😮', '😢', '🙏', '👍', '🔥', '💀', '😭', '🥺']
+                const randomEmoji = emojis[Math.floor(Math.random() * emojis.length)]
+                
+                await sock.sendMessage(from, {
+                    react: {
+                        text: randomEmoji,
+                        key: m.key
+                    }
+                })
+                
+                console.log(`Viewed + reacted ${randomEmoji} to status from ${sender.split('@')[0]}`)
             } catch (e) {
-                console.log('Status view error:', e.message)
+                console.log('Status view/react error:', e.message)
             }
             return
         }
 
+        // AUTO READ
         if (config.autoread) {
             try {
                 await sock.readMessages([m.key])
             } catch (e) {}
         }
 
-        if (cmd && config.autotyping &&!config.autonline) {
-            await sock.sendPresenceUpdate('composing', from)
-        } else if (cmd && config.autorecording &&!config.autonline) {
-            await sock.sendPresenceUpdate('recording', from)
+        // ANTILINK
+        if (config.antilink && isGroup &&!isOwner) {
+            const linkRegex = /chat\.whatsapp\.com\/[A-Za-z0-9]{20,}/
+            if (linkRegex.test(body)) {
+                const groupMetadata = await sock.groupMetadata(from)
+                const botAdmin = groupMetadata.participants.find(p => p.id === sock.user.id.split(':')[0] + '@s.whatsapp.net')?.admin
+                if (botAdmin) {
+                    await sock.sendMessage(from, {
+                        text: `*Antilink Detected* ⚠️\n@${sender.split('@')[0]} sent a link.`,
+                        mentions:
+                    }, { quoted: m })
+                    await sock.groupParticipantsUpdate(from,, 'remove')
+                    return
+                }
+            }
+        }
+
+        // CHATBOT - Auto reply when tagged
+        if (config.chatbot && m.message.extendedTextMessage?.contextInfo?.mentionedJid?.includes(sock.user.id)) {
+            const replies = ['Hey 💀', 'Yo Mr Void', 'What\'s up?', 'Bot here', 'Say that again?']
+            const randomReply = replies[Math.floor(Math.random() * replies.length)]
+            await sock.sendMessage(from, { text: randomReply }, { quoted: m })
+            return
+        }
+
+        // PRESENCE - Auto typing/recording on ALL messages
+        if (!config.autonline) {
+            if (config.autotyping) {
+                await sock.sendPresenceUpdate('composing', from)
+                setTimeout(async () => {
+                    await sock.sendPresenceUpdate('paused', from)
+                }, 3000)
+            } else if (config.autorecording) {
+                await sock.sendPresenceUpdate('recording', from)
+                setTimeout(async () => {
+                    await sock.sendPresenceUpdate('paused', from)
+                }, 3000)
+            }
         }
 
         if (!body.startsWith(PREFIX)) return
@@ -159,46 +213,36 @@ async function startBot() {
             reply(`❌ Error: ${e.message}`)
         }
     })
+
+    // ANTI DELETE - Catch deleted messages
+    sock.ev.on('messages.update', async (updates) => {
+        if (!config.antidelete) return
+
+        for (const { key, update } of updates) {
+            if (update.messageStubType === 8 && msgStore.has(key.id)) { // 8 = delete
+                const msg = msgStore.get(key.id)
+                const deletedBy = key.participant || key.remoteJid
+
+                if (deletedBy === sock.user.id) return // Don't show if bot deleted it
+
+                let text = `*ANTI DELETE* 💀\n\n`
+                text += `*Deleted by:* @${deletedBy.split('@')[0]}\n`
+                text += `*Original sender:* @${msg.sender.split('@')[0]}\n`
+                text += `*Time:* ${new Date(msg.timestamp).toLocaleTimeString()}\n\n`
+                text += `*Message:* \n`
+
+                const content = msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || '_Media message_'
+                text += content
+
+                await sock.sendMessage(msg.from, {
+                    text,
+                    mentions: [deletedBy, msg.sender]
+                })
+
+                msgStore.delete(key.id)
+            }
+        }
+    })
 }
 
 startBot()
-
-app.get('/', (req, res) => {
-    if (isConnected) {
-        res.send(`
-            <html>
-                <head><title>${BOT_NAME}</title></head>
-                <body style="background:#000;color:#0f0;text-align:center;padding:50px;font-family:monospace">
-                    <h1>✅ ${BOT_NAME} Running!</h1>
-                    <p>Bot Number: ${BOT_NUMBER}</p>
-                    <p>Owner: ${OWNER_NUMBER}</p>
-                    <img src="${BOT_IMAGE}" width="200" style="border-radius:20px;margin-top:20px">
-                </body>
-            </html>
-        `)
-    } else if (qrCodeData) {
-        res.send(`
-            <html>
-                <head><title>Scan QR - ${BOT_NAME}</title></head>
-                <body style="background:#000;color:#fff;text-align:center;padding:20px;font-family:monospace">
-                    <h1>${BOT_NAME} - Scan QR Code</h1>
-                    <p>Open WhatsApp > Linked Devices > Link Device</p>
-                    <img src="${qrCodeData}" style="border:10px solid #25D366;border-radius:20px;margin:20px">
-                    <p>QR expires in 20 seconds. Refresh if needed.</p>
-                </body>
-            </html>
-        `)
-    } else {
-        res.send(`
-            <html>
-                <body style="background:#000;color:#fff;text-align:center;padding:50px;font-family:monospace">
-                    <h1>${BOT_NAME} Starting...</h1>
-                    <p>Generating QR code... Refresh in 5 seconds</p>
-                    <script>setTimeout(()=>location.reload(),5000)</script>
-                </body>
-            </html>
-        `)
-    }
-})
-
-app.listen(process.env.PORT || 10000, () => console.log('VOID-MD Server running on port 10000'))
