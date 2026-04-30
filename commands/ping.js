@@ -1,9 +1,15 @@
 module.exports = {
     name: 'ping',
-    alias: ['p'],
-    desc: 'Check bot speed',
-    execute: async ({ reply }) => {
+    alias: ['speed', 'pong'],
+    desc: 'Check bot response time',
+    category: 'general',
+    async execute({ reply, sock, from, m }) {
         const start = Date.now()
-        reply(`🏓 Pong! ${Date.now() - start}ms`)
+        const msg = await reply('*Testing...* 💀')
+        const end = Date.now()
+        await sock.sendMessage(from, {
+            text: `*Pong!* 🏓\n*Speed:* ${end - start}ms`,
+            edit: msg.key
+        })
     }
 }
