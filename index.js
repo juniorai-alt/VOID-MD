@@ -11,7 +11,7 @@ const BOT_NAME = 'VOID-MD'
 const OWNER_NAME = 'Mr Void'
 const OWNER_NUMBER = '254112843071' // Your main number without +
 const BOT_NUMBER = '254738440805' // Bot number that scanned QR
-const BOT_IMAGE = 'https://i.ibb.co/6Z2QZQz/void.jpg'
+const BOT_IMAGE = 'https://files.catbox.moe/bhiw6e.png'
 const VERSION = 'v1.2.0'
 
 let config = JSON.parse(fs.readFileSync('./config.json'))
