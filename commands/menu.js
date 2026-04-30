@@ -1,7 +1,7 @@
 module.exports = {
     name: 'menu',
     alias: ['help', 'list', 'commands'],
-    desc: 'Show all commands',
+    desc: 'Show all bot commands',
     category: 'general',
     async execute({ reply, commands, PREFIX, BOT_NAME, VERSION, uptime, isOwner, config, sock, from, m, BOT_IMAGE }) {
         // Group commands by category
@@ -13,14 +13,16 @@ module.exports = {
             categories[cat].push(cmd)
         })
 
-        let text = `*${BOT_NAME} ${VERSION}* 💀\n`
-        text += `*Uptime:* ${uptime()}\n`
-        text += `*Prefix:* ${PREFIX}\n`
-        text += `*Total Commands:* ${commands.size}\n\n`
+        let text = `╭─── *${BOT_NAME}* ───╮\n`
+        text += `│ *Version:* ${VERSION}\n`
+        text += `│ *Uptime:* ${uptime()}\n`
+        text += `│ *Prefix:* ${PREFIX}\n`
+        text += `│ *Commands:* ${commands.size}\n`
+        text += `╰─────────────────╯\n\n`
 
-        // Show toggles status for owner
+        // Show toggles status for owner only
         if (isOwner) {
-            text += `*SYSTEM TOGGLES*\n`
+            text += `*⚙️ SYSTEM TOGGLES*\n`
             text += `├ Autoview: ${config.autoview? '✅' : '❌'}\n`
             text += `├ Autotyping: ${config.autotyping? '✅' : '❌'}\n`
             text += `├ Autorecording: ${config.autorecording? '✅' : '❌'}\n`
@@ -32,18 +34,20 @@ module.exports = {
         }
 
         // List commands by category
-        text += `*COMMAND LIST*\n`
+        text += `*📑 COMMAND LIST*\n`
         for (const [cat, cmds] of Object.entries(categories)) {
+            // Skip owner category for non-owners
             if (cat === 'owner' &&!isOwner) continue
 
             const catName = cat.toUpperCase()
             text += `\n*${catName}* [${cmds.length}]\n`
-            cmds.forEach(cmd => {
-                text += `├ ${PREFIX}${cmd.name} - ${cmd.desc}\n`
+            cmds.forEach((cmd, i) => {
+                const line = i === cmds.length - 1? '└' : '├'
+                text += `${line} ${PREFIX}${cmd.name} - ${cmd.desc}\n`
             })
         }
 
-        text += `\n*Usage:* ${PREFIX}command`
+        text += `\n💀 *${BOT_NAME}* by Mr Void`
 
         // Send with bot image
         try {
