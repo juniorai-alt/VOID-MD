@@ -1,15 +1,26 @@
 module.exports = {
     name: 'demote',
-    desc: 'Remove admin',
-    execute: async ({ sock, m, from, isGroup, isOwner, sender, mentioned, quoted, reply }) => {
-        await sock.sendMessage(from, { react: { text: '⬇️', key: m.key } })
-        if (!isGroup) return reply('Group only')
+    alias: ['unadmin'],
+    desc: 'Demote admin to member',
+    category: 'admin',
+    async execute({ reply, sock, from, isGroup, isOwner, mentioned, quoted, m }) {
+        if (!isGroup) return reply('*Group only* 💀')
+
         const groupMetadata = await sock.groupMetadata(from)
-        const isAdmin = groupMetadata.participants.find(p => p.id === sender)?.admin!== null
-        if (!isAdmin &&!isOwner) return reply('Admin only')
-        const user = mentioned[0] || (quoted? quoted.sender : null)
-        if (!user) return reply('Tag or reply to user')
-        await sock.groupParticipantsUpdate(from, [user], 'demote')
-        await reply(`Demoted @${user.split('@')[0]}`)
+        const botAdmin = groupMetadata.participants.find(p => p.id === sock.user.id.split(':')[0] + '@s.whatsapp.net')?.admin
+        const senderAdmin = groupMetadata.participants.find(p => p.id === (m.key.participant || m.key.remoteJid))?.admin
+
+        if (!botAdmin) return reply('*Bot must be admin* 💀')
+        if (!senderAdmin &&!isOwner) return reply('*Admin/Owner only* 💀')
+
+        let target = mentioned[0] || quoted?.sender
+        if (!target) return reply('*Tag or reply to user* 💀')
+
+        try {
+            await sock.groupParticipantsUpdate(from, [target], 'demote')
+            reply(`*Demoted* @${target.split('@')[0]} 💀`, { mentions: [target] })
+        } catch (e) {
+            reply(`*Failed:* ${e.message} 💀`)
+        }
     }
 }
