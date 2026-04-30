@@ -1,28 +1,23 @@
-const fs = require('fs')
-const path = require('path')
-
 module.exports = {
     name: 'autorecording',
-    alias: ['recording', 'autorec'],
-    desc: 'Show recording indicator when processing commands',
-    execute: async ({ sock, m, from, args, PREFIX, reply }) => {
-        await sock.sendMessage(from, { react: { text: '🎙️', key: m.key } })
-
-        const configPath = path.join(__dirname, '../config.json')
-        let config = JSON.parse(fs.readFileSync(configPath))
+    alias: ['ar'],
+    desc: 'Toggle recording on all messages',
+    category: 'owner',
+    async execute({ reply, args, isOwner, config, saveConfig }) {
+        if (!isOwner) return reply('*Owner only* 💀')
 
         if (args[0] === 'on') {
             config.autorecording = true
             config.autotyping = false
-            fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
-            await reply('✅ *Auto Recording ON*\nBot shows "recording audio..." when running commands')
+            config.autonline = false
+            saveConfig()
+            reply('*Autorecording ON* 💀\nBot shows recording for 3sec on every message')
         } else if (args[0] === 'off') {
             config.autorecording = false
-            fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
-            await reply('❌ *Auto Recording OFF*')
+            saveConfig()
+            reply('*Autorecording OFF* 💀')
         } else {
-            const status = config.autorecording? 'ON ✅' : 'OFF ❌'
-            await reply(`*AUTO RECORDING STATUS:* ${status}\n\nUsage: ${PREFIX}autorecording on/off`)
+            reply(`*Autorecording Status:* ${config.autorecording? 'ON ✅' : 'OFF ❌'}\n\nUse:.autorecording on/off`)
         }
     }
 }
