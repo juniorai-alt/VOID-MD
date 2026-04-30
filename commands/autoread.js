@@ -1,26 +1,21 @@
-const fs = require('fs')
-const path = require('path')
-
 module.exports = {
     name: 'autoread',
+    alias: ['aread'],
     desc: 'Toggle auto read messages',
-    execute: async ({ sock, m, from, args, PREFIX, reply }) => {
-        await sock.sendMessage(from, { react: { text: '📖', key: m.key } })
-
-        const configPath = path.join(__dirname, '../config.json')
-        let config = JSON.parse(fs.readFileSync(configPath))
+    category: 'owner',
+    async execute({ reply, args, isOwner, config, saveConfig }) {
+        if (!isOwner) return reply('*Owner only* 💀')
 
         if (args[0] === 'on') {
             config.autoread = true
-            fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
-            await reply('✅ *Auto Read ON*\nBot will mark all messages as read')
+            saveConfig()
+            reply('*Autoread ON* 💀\nBot will mark all messages as read')
         } else if (args[0] === 'off') {
             config.autoread = false
-            fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
-            await reply('❌ *Auto Read OFF*')
+            saveConfig()
+            reply('*Autoread OFF* 💀')
         } else {
-            const status = config.autoread? 'ON ✅' : 'OFF ❌'
-            await reply(`*AUTO READ STATUS:* ${status}\n\nUsage: ${PREFIX}autoread on/off`)
+            reply(`*Autoread Status:* ${config.autoread? 'ON ✅' : 'OFF ❌'}\n\nUse:.autoread on/off`)
         }
     }
 }
