@@ -1,27 +1,22 @@
-const fs = require('fs')
-const path = require('path')
-
 module.exports = {
     name: 'antilink',
-    desc: 'Toggle antilink on/off - kicks users who send links',
-    execute: async ({ sock, m, from, isGroup, args, PREFIX, reply }) => {
-        await sock.sendMessage(from, { react: { text: '🔗', key: m.key } })
-        if (!isGroup) return reply('Group only')
-
-        const configPath = path.join(__dirname, '../config.json')
-        let config = JSON.parse(fs.readFileSync(configPath))
+    alias: ['al'],
+    desc: 'Toggle antilink',
+    category: 'owner',
+    async execute({ reply, args, isOwner, config, saveConfig, isGroup }) {
+        if (!isOwner) return reply('*Owner only* 💀')
+        if (!isGroup) return reply('*Group only command* 💀')
 
         if (args[0] === 'on') {
             config.antilink = true
-            fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
-            await reply('✅ *Antilink ON*\nUsers sending group links will be kicked\n\n⚠️ Bot must be admin')
+            saveConfig()
+            reply('*Antilink ON* 💀\nBot will kick users who send group links\n*Note:* Bot must be admin')
         } else if (args[0] === 'off') {
             config.antilink = false
-            fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
-            await reply('❌ *Antilink OFF*')
+            saveConfig()
+            reply('*Antilink OFF* 💀')
         } else {
-            const status = config.antilink? 'ON ✅' : 'OFF ❌'
-            await reply(`*ANTILINK STATUS:* ${status}\n\nUsage: ${PREFIX}antilink on/off`)
+            reply(`*Antilink Status:* ${config.antilink? 'ON ✅' : 'OFF ❌'}\n\nUse:.antilink on/off`)
         }
     }
 }
