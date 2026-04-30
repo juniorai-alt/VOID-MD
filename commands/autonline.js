@@ -1,31 +1,25 @@
-const fs = require('fs')
-const path = require('path')
-
 module.exports = {
     name: 'autonline',
-    alias: ['online', 'alwaysonline'],
-    desc: 'Show bot as online 24/7',
-    execute: async ({ sock, m, from, args, PREFIX, reply }) => {
-        await sock.sendMessage(from, { react: { text: '🟢', key: m.key } })
-
-        const configPath = path.join(__dirname, '../config.json')
-        let config = JSON.parse(fs.readFileSync(configPath))
+    alias: ['ao'],
+    desc: 'Toggle always online',
+    category: 'owner',
+    async execute({ reply, args, isOwner, config, saveConfig, sock }) {
+        if (!isOwner) return reply('*Owner only* 💀')
 
         if (args[0] === 'on') {
             config.autonline = true
             config.autotyping = false
             config.autorecording = false
-            fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
+            saveConfig()
             await sock.sendPresenceUpdate('available')
-            await reply('✅ *Auto Online ON*\nBot now shows "online" 24/7\n\n⚠️ Disables auto typing/recording')
+            reply('*Autonline ON* 💀\nBot will always show online\n*Note:* Autotyping/recording disabled')
         } else if (args[0] === 'off') {
             config.autonline = false
-            fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
+            saveConfig()
             await sock.sendPresenceUpdate('unavailable')
-            await reply('❌ *Auto Online OFF*\nBot goes offline when idle')
+            reply('*Autonline OFF* 💀')
         } else {
-            const status = config.autonline? 'ON ✅' : 'OFF ❌'
-            await reply(`*AUTO ONLINE STATUS:* ${status}\n\nUsage: ${PREFIX}autonline on/off`)
+            reply(`*Autonline Status:* ${config.autonline? 'ON ✅' : 'OFF ❌'}\n\nUse:.autonline on/off`)
         }
     }
 }
